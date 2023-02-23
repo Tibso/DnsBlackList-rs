@@ -43,11 +43,7 @@ async fn main()
     println!("Received {} matchclasses", matchclasses_count);
     let binds = redis_mod::redis_get(&redis_manager, "binds", &daemon_id).await.expect("Error fetching binds from Redis");
     println!("Received bind list");
-/* 
-    let (client, stream) = client_mod::get_client_stream("8.8.8.8:53").await.expect("Error creating DNS client");
-    tokio::spawn(stream);
-    println!("DNS Client stream thread spawned");
-*/
+
     println!("Initializing server...");
     let handler = handler_mod::Handler {
         redis_manager, matchclasses
