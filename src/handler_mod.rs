@@ -1,12 +1,21 @@
 use crate::redis_mod;
 use crate::resolver_mod;
 
+use trust_dns_resolver::{
+    AsyncResolver,
+    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
+};
 use trust_dns_server::{
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     proto::op::{Header, ResponseCode, OpCode, MessageType},
     authority::MessageResponseBuilder
 };
-use trust_dns_proto::rr::{RData, Record, RecordType, rdata::TXT};
+use trust_dns_proto::rr::{
+    Record,
+    RData, 
+    RecordType,
+    rdata::TXT
+};
 use tracing::error;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -34,7 +43,8 @@ impl RequestHandler for Handler {
         &self,
         request: &Request,
         response: R
-    ) -> ResponseInfo {
+    )
+    -> ResponseInfo {
         match self.do_handle_request(request, response).await {
             Ok(info) => info,
             Err(error) => {
@@ -49,20 +59,22 @@ impl RequestHandler for Handler {
 
 pub struct Handler {
     pub redis_manager: redis::aio::ConnectionManager,
-    pub matchclasses: Vec<String>
+    pub matchclasses: Vec<String>,
+    pub resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 }
 impl Handler {
     async fn do_handle_request <R: ResponseHandler> (
         &self,
         request: &Request,
         response: R
-    ) -> Result<ResponseInfo, CustomError> {
+    )
+    -> Result<ResponseInfo, CustomError> {
         if request.op_code() != OpCode::Query {
-            return Err(CustomError::InvalidOpCode(request.op_code()));
+            return Err(CustomError::InvalidOpCode(request.op_code()))
         }
 
         if request.message_type() != MessageType::Query {
-            return Err(CustomError::InvalidMessageType(request.message_type()));
+            return Err(CustomError::InvalidMessageType(request.message_type()))
         }
 
         let domain_name = request.query().name().to_string().to_lowercase();
@@ -91,14 +103,14 @@ impl Handler {
             domain_to_check.push('.');
 
             for matchclass in &self.matchclasses {
-                match redis_mod::redis_exists(
+                match redis_mod::exists(
                     &self.redis_manager,
                     format!("{}:{}", matchclass, domain_to_check),
                     request.src().is_ipv4()
                 ).await {
                     Ok(ok) => {
                         if ok {
-                            return self.should_lie(true, request, response).await;
+                            return self.should_lie(true, request, response).await
                         }
                     },
                     Err(error) => return Err(CustomError::RedisError(error))
@@ -106,7 +118,7 @@ impl Handler {
             }
         }
 
-        return self.should_lie(false, request, response).await;
+        return self.should_lie(false, request, response).await
     }
 
     async fn should_lie <R: ResponseHandler> (
@@ -114,14 +126,15 @@ impl Handler {
         should: bool,
         request: &Request,
         mut responder: R
-    ) -> Result<ResponseInfo, CustomError> {
+    )
+    -> Result<ResponseInfo, CustomError> {
         let builder = MessageResponseBuilder::from_message_request(request);
         let mut header = Header::response_from_request(request.header());
         header.set_authoritative(false);
 
         let answers: Vec<Record>;
         match should {
-            false => answers = resolver_mod::get_answers(request.query()).await?,
+            false => answers = resolver_mod::get_answers(request.query(), self.resolver.clone()).await?,
             true => answers = {
                 let rdata = match request.query().query_type() {
                     RecordType::A => RData::A(Ipv4Addr::new(127, 0, 0, 1)),
@@ -131,7 +144,7 @@ impl Handler {
                 };
                 vec![Record::from_rdata(request.query().name().into(), 60, rdata)]
             }
-        };
+        }
     
         let response = builder.build(header, answers.iter(), &[], &[], &[]);
         return match responder.send_response(response).await {

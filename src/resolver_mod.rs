@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::handler_mod::CustomError;
 
 use trust_dns_client::{
@@ -8,19 +6,45 @@ use trust_dns_client::{
 };
 use trust_dns_proto::rr::Record;
 use trust_dns_resolver::{
-    config::{ResolverConfig, ResolverOpts},
+    config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol},
     Name,
-    TokioAsyncResolver
+    TokioAsyncResolver,
+    AsyncResolver,
+    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
+};
+use std::{
+    str::FromStr,
+    net::SocketAddr
 };
 
-pub async fn get_answers (
-    request: &LowerQuery
-) -> Result<Vec<Record>, CustomError> {
+pub fn build_resolver (
+    sockets: Vec<SocketAddr>
+)
+-> AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>> {
+    let mut resolver_config = ResolverConfig::new();
+    resolver_config.domain();
+
+    for socket in sockets {
+        let ns_udp = NameServerConfig::new(socket, Protocol::Udp);
+        resolver_config.add_name_server(ns_udp);
+        let ns_tcp = NameServerConfig::new(socket, Protocol::Tcp);
+        resolver_config.add_name_server(ns_tcp)
+    }
+    
     let resolver = TokioAsyncResolver::tokio(
-        ResolverConfig::google(),
+        resolver_config,
         ResolverOpts::default()
     ).unwrap();
 
+    println!("Resolver built");
+    return resolver
+}
+
+pub async fn get_answers (
+    request: &LowerQuery,
+    resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
+)
+-> Result<Vec<Record>, CustomError> {    
     let mut answers: Vec<Record> =  Vec::new();
     let name_binding = request.name().to_string();
     let name = name_binding.as_str();
@@ -33,7 +57,7 @@ pub async fn get_answers (
 
             for rdata in response {
                 answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::A(rdata)));
-            } 
+            }
         },
         RecordType::AAAA => {
             let response = match resolver.ipv6_lookup(name).await {

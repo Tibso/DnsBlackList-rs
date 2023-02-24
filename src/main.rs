@@ -2,6 +2,8 @@ mod handler_mod;
 mod redis_mod;
 mod resolver_mod;
 
+use crate::handler_mod::Handler;
+
 use trust_dns_server::ServerFuture;
 use tokio::net::{TcpListener, UdpSocket};
 use std::{
@@ -19,37 +21,27 @@ struct Config {
     redis_address: String
 }
 
-#[tokio::main]
-async fn main()
--> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
-
+fn read_config (
+    file_name: &str
+)
+-> (String, String) {
     let config: Config = {
-        let data = fs::read_to_string("resolver.conf").expect("Error reading config file");
+        let data = fs::read_to_string(file_name).expect("Error reading config file");
         serde_json::from_str(&data).expect("Error deserializing config file data")
     };
     let daemon_id = config.daemon_id;
     println!("Daemon_id is {}", daemon_id);
-    
+
     let redis_address = config.redis_address;
     println!("Redis server: {}", redis_address);
-    let redis_client = redis::Client::open(format!("redis://{}/", redis_address)).expect("Error probing the Redis server");
-    println!("Redis server probe successful");
-    let redis_manager = redis_client.get_tokio_connection_manager().await.expect("Error initiating the connection manager");
-    println!("Connection to Redis successful");
 
-    let matchclasses = redis_mod::redis_get(&redis_manager, "matchclasses", &daemon_id).await.expect("Error fetching matchclasses from Redis");
-    let matchclasses_count = matchclasses.clone().iter().count();
-    println!("Received {} matchclasses", matchclasses_count);
-    let binds = redis_mod::redis_get(&redis_manager, "binds", &daemon_id).await.expect("Error fetching binds from Redis");
-    println!("Received bind list");
+    return (daemon_id, redis_address)
+}
 
-    println!("Initializing server...");
-    let handler = handler_mod::Handler {
-        redis_manager, matchclasses
-    };
-    let mut server = ServerFuture::new(handler);
-
+async fn setup_binds (
+    server: &mut ServerFuture<Handler>,
+    binds: Vec<String>
+) {
     let binds_count = binds.clone().iter().count();
     let mut successful_bind_count: u32 = 0;
     for bind in binds {
@@ -76,7 +68,27 @@ async fn main()
         };
         successful_bind_count += 1
     }
-    println!("{} binds set out of {} total binds", successful_bind_count, binds_count);
+    println!("{} out of {} total binds were set", successful_bind_count, binds_count);
+}
+
+#[tokio::main]
+async fn main()
+-> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+
+    let (daemon_id, redis_address) = read_config("dnslr.conf");
+
+    let (redis_manager, matchclasses, forwarders, binds) = redis_mod::build_redis(redis_address, &daemon_id).await;
+
+    let resolver = resolver_mod::build_resolver(forwarders);
+
+    println!("Initializing server...");
+    let handler = handler_mod::Handler {
+        redis_manager, matchclasses, resolver
+    };
+    let mut server = ServerFuture::new(handler);
+
+    setup_binds(&mut server, binds).await;
 
     println!("Started {}", daemon_id);
     server.block_until_done().await?;
