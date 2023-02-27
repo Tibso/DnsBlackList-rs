@@ -128,13 +128,14 @@ impl Handler {
         mut responder: R
     )
     -> Result<ResponseInfo, CustomError> {
-        let builder = MessageResponseBuilder::from_message_request(request);
-        let mut header = Header::response_from_request(request.header());
-        header.set_authoritative(false);
-
         let answers: Vec<Record>;
         match should {
-            false => answers = resolver_mod::get_answers(request.query(), self.resolver.clone()).await?,
+            false => answers = {
+                match resolver_mod::get_answers(request.query(), self.resolver.clone()).await {
+                    Ok(ok) => ok,
+                    Err(_) => [].to_vec()
+                }
+            },
             true => answers = {
                 let rdata = match request.query().query_type() {
                     RecordType::A => RData::A(Ipv4Addr::new(127, 0, 0, 1)),
@@ -145,7 +146,10 @@ impl Handler {
                 vec![Record::from_rdata(request.query().name().into(), 60, rdata)]
             }
         }
-    
+
+        let builder = MessageResponseBuilder::from_message_request(request);
+        let mut header = Header::response_from_request(request.header());
+        header.set_authoritative(false);
         let response = builder.build(header, answers.iter(), &[], &[], &[]);
         return match responder.send_response(response).await {
             Ok(ok) => Ok(ok),
