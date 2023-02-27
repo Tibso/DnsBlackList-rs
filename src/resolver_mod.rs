@@ -79,6 +79,16 @@ pub async fn get_answers (
                 answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::TXT(rdata)));
             } 
         },
+        RecordType::SRV => {
+            let response = match resolver.srv_lookup(name).await {
+                Ok(ok) => ok,
+                Err(error) => return Err(CustomError::ResolverError(error))
+            };
+
+            for rdata in response {
+                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::SRV(rdata)));
+            }
+        },
         _ => todo!()
     }
 

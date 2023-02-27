@@ -2,6 +2,8 @@ use crate::redis_mod;
 use crate::resolver_mod;
 
 use smallvec::smallvec;
+use trust_dns_client::rr::rdata::SRV;
+use trust_dns_resolver::Name;
 use trust_dns_resolver::{
     AsyncResolver,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
@@ -19,6 +21,7 @@ use trust_dns_proto::rr::{
 };
 use tracing::error;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 use smallvec::{
     SmallVec,
     ToSmallVec
@@ -147,6 +150,7 @@ impl Handler {
                     RecordType::A => RData::A(Ipv4Addr::new(127, 0, 0, 1)),
                     RecordType::AAAA => RData::AAAA(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                     RecordType::TXT => RData::TXT(TXT::new(vec!["127.0.0.1".to_string()])),
+                    RecordType::SRV => RData::SRV(SRV::new(0, 0, 1053, Name::from_str("thib-deb.").unwrap())),
                     _ => todo!()
                 };
                 vec![Record::from_rdata(request.query().name().into(), 60, rdata)]
