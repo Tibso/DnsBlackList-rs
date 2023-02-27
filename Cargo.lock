@@ -71,6 +71,7 @@ dependencies = [
  "redis",
  "serde",
  "serde_json",
+ "smallvec",
  "thiserror",
  "tokio",
  "tracing",

@@ -1,6 +1,7 @@
 use crate::redis_mod;
 use crate::resolver_mod;
 
+use smallvec::smallvec;
 use trust_dns_resolver::{
     AsyncResolver,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
@@ -18,6 +19,10 @@ use trust_dns_proto::rr::{
 };
 use tracing::error;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use smallvec::{
+    SmallVec,
+    ToSmallVec
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum CustomError {
@@ -82,23 +87,24 @@ impl Handler {
 
         let name_count = names.clone().count();
         let filter_5: [u8; 5] = [3, 4, 2, 5, 1];
-        let range: Vec<u8> = match name_count {
-            1 => [1].to_vec(),
-            2 => [2, 1].to_vec(),
-            3 => [3, 2, 1].to_vec(),
-            4 => [3, 4, 2, 1].to_vec(),
-            5 => filter_5.to_vec(),
+        let mut order: SmallVec<[u8; 5]> = smallvec![];
+        match name_count -1 {
+            1 => order = smallvec![1],
+            2 => order = smallvec![2, 1],
+            3 => order = smallvec![3, 2, 1],
+            4 => order = smallvec![3, 4, 2, 1],
+            5 => order = filter_5.to_smallvec(),
             _ => {
-                let mut tmp_range: Vec<u8> = filter_5.to_vec();
-                for index in 5..name_count + 1 {
-                    tmp_range[index] = index as u8
+                order.extend(1..name_count as u8);
+                order = filter_5.to_smallvec();
+                for index in 6..name_count {
+                    order.push(index as u8)
                 }
-                tmp_range
             }
-        };
+        }
 
         let names: Vec<&str> = names.collect();
-        for index in range {
+        for index in order {
             let mut domain_to_check = names[name_count - (index as usize)..name_count - 1].join(".");
             domain_to_check.push('.');
 
