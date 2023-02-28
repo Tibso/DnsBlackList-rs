@@ -1,7 +1,7 @@
 use crate::handler_mod::CustomError;
 
 use trust_dns_client::{
-    op::LowerQuery,
+    op::{LowerQuery, Header, ResponseCode},
     rr::{RecordType, RData}
 };
 use trust_dns_proto::rr::Record;
@@ -14,7 +14,7 @@ use trust_dns_resolver::{
 };
 use std::{
     str::FromStr,
-    net::SocketAddr
+    net::{SocketAddr, IpAddr}
 };
 
 pub fn build_resolver (
@@ -42,9 +42,10 @@ pub fn build_resolver (
 
 pub async fn get_answers (
     request: &LowerQuery,
+    mut header: Header,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
--> Result<Vec<Record>, CustomError> {    
+-> Result<(Vec<Record>, Header), CustomError> {    
     let mut answers: Vec<Record> =  Vec::new();
     let name_binding = request.name().to_string();
     let name = name_binding.as_str();
@@ -88,9 +89,37 @@ pub async fn get_answers (
             for rdata in response {
                 answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::SRV(rdata)));
             }
+        },/*
+        RecordType::PTR => {
+            println!("{}", name);
+            let mut splits: Vec<&str> = name.split('.').collect();
+            splits.pop();
+
+
+            let response = match resolver.reverse_lookup(IpAddr::from_str(name).unwrap()).await {
+                Ok(ok) => ok,
+                Err(error) => return Err(CustomError::ResolverError(error))
+            };
+
+            for rdata in response {
+                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::PTR(rdata)));
+            }
+        }, */
+        RecordType::MX => {
+            let response = match resolver.mx_lookup(name).await {
+                Ok(ok) => ok,
+                Err(error) => return Err(CustomError::ResolverError(error))
+            };
+
+            for rdata in response {
+                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::MX(rdata)));
+            }
         },
-        _ => todo!()
+        _ => {
+            answers = vec![];
+            header.set_response_code(ResponseCode::NotImp);
+        }
     }
 
-    return Ok(answers)
+    return Ok((answers, header))
 }

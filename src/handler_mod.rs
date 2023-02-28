@@ -2,7 +2,6 @@ use crate::redis_mod;
 use crate::resolver_mod;
 
 use smallvec::smallvec;
-use trust_dns_client::rr::rdata::SRV;
 use trust_dns_resolver::Name;
 use trust_dns_resolver::{
     AsyncResolver,
@@ -17,7 +16,7 @@ use trust_dns_proto::rr::{
     Record,
     RData, 
     RecordType,
-    rdata::TXT
+    rdata::{TXT, SRV}
 };
 use tracing::error;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -137,12 +136,17 @@ impl Handler {
         mut responder: R
     )
     -> Result<ResponseInfo, CustomError> {
+        let builder = MessageResponseBuilder::from_message_request(request);
+        let mut header = Header::response_from_request(request.header());
+        header.set_authoritative(false);
+        header.set_recursion_available(true);
+
         let answers: Vec<Record>;
         match should {
-            false => answers = {
-                match resolver_mod::get_answers(request.query(), self.resolver.clone()).await {
+            false => (answers, header) = {
+                match resolver_mod::get_answers(request.query(), header, self.resolver.clone()).await {
                     Ok(ok) => ok,
-                    Err(_) => [].to_vec()
+                    Err(_) => (vec![], header)
                 }
             },
             true => answers = {
@@ -157,9 +161,6 @@ impl Handler {
             }
         }
 
-        let builder = MessageResponseBuilder::from_message_request(request);
-        let mut header = Header::response_from_request(request.header());
-        header.set_authoritative(false);
         let response = builder.build(header, answers.iter(), &[], &[], &[]);
         return match responder.send_response(response).await {
             Ok(ok) => Ok(ok),
