@@ -1,6 +1,7 @@
 mod handler_mod;
 mod redis_mod;
 mod resolver_mod;
+mod matching;
 
 use crate::handler_mod::Handler;
 
@@ -78,13 +79,13 @@ async fn main()
 
     let (daemon_id, redis_address) = read_config("dnslr.conf");
 
-    let (redis_manager, matchclasses, forwarders, binds) = redis_mod::build_redis(redis_address, &daemon_id).await;
+    let (redis_manager, matchclasses, blackhole_ips, forwarders, binds) = redis_mod::build_redis(redis_address, &daemon_id).await;
 
     let resolver = resolver_mod::build_resolver(forwarders);
 
     println!("Initializing server...");
     let handler = handler_mod::Handler {
-        redis_manager, matchclasses, resolver
+        redis_manager, matchclasses, blackhole_ips, resolver
     };
     let mut server = ServerFuture::new(handler);
 

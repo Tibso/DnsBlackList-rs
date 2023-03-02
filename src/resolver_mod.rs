@@ -2,19 +2,20 @@ use crate::handler_mod::CustomError;
 
 use trust_dns_client::{
     op::{LowerQuery, Header, ResponseCode},
-    rr::{RecordType, RData}
+    rr::RecordType,
 };
 use trust_dns_proto::rr::Record;
 use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol},
-    Name,
     TokioAsyncResolver,
     AsyncResolver,
-    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
+    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime},
+    IntoName,
+    error::{ResolveErrorKind, ResolveError},
+    lookup::Lookup
 };
 use std::{
-    str::FromStr,
-    net::{SocketAddr, IpAddr}
+    net::SocketAddr
 };
 
 pub fn build_resolver (
@@ -31,9 +32,11 @@ pub fn build_resolver (
         resolver_config.add_name_server(ns_tcp)
     }
     
+    let mut resolver_opts: ResolverOpts = ResolverOpts::default();
+    resolver_opts.num_concurrent_reqs = 0;
     let resolver = TokioAsyncResolver::tokio(
         resolver_config,
-        ResolverOpts::default()
+        resolver_opts
     ).unwrap();
 
     println!("Resolver built");
@@ -41,85 +44,58 @@ pub fn build_resolver (
 }
 
 pub async fn get_answers (
-    request: &LowerQuery,
+    query: &LowerQuery,
     mut header: Header,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
 -> Result<(Vec<Record>, Header), CustomError> {    
     let mut answers: Vec<Record> =  Vec::new();
-    let name_binding = request.name().to_string();
-    let name = name_binding.as_str();
-    match request.query_type() {
-        RecordType::A => {
-            let response = match resolver.ipv4_lookup(name).await {
-                Ok(ok) => ok,
-                Err(error) => return Err(CustomError::ResolverError(error))
-            };
+    let name = query.name().into_name().unwrap();
 
-            for rdata in response {
-                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::A(rdata)));
-            }
-        },
-        RecordType::AAAA => {
-            let response = match resolver.ipv6_lookup(name).await {
-                Ok(ok) => ok,
-                Err(error) => return Err(CustomError::ResolverError(error))
-            };
-
-            for rdata in response {
-                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::AAAA(rdata)));
-            } 
-        },
-        RecordType::TXT => {
-            let response = match resolver.txt_lookup(name).await {
-                Ok(ok) => ok,
-                Err(error) => return Err(CustomError::ResolverError(error))
-            };
-
-            for rdata in response {
-                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::TXT(rdata)));
-            } 
-        },
-        RecordType::SRV => {
-            let response = match resolver.srv_lookup(name).await {
-                Ok(ok) => ok,
-                Err(error) => return Err(CustomError::ResolverError(error))
-            };
-
-            for rdata in response {
-                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::SRV(rdata)));
-            }
-        },/*
+    let wrapped: Result<Lookup, ResolveError>;
+    match query.query_type() {
+        RecordType::A => wrapped = resolver.lookup(name.clone(), RecordType::A).await,
+        RecordType::AAAA => wrapped = resolver.lookup(name.clone(), RecordType::AAAA).await,
+        RecordType::TXT => wrapped = resolver.lookup(name.clone(), RecordType::TXT).await,
+        RecordType::SRV => wrapped = resolver.lookup(name.clone(), RecordType::SRV).await,
+        RecordType::MX => wrapped = resolver.lookup(name.clone(), RecordType::MX).await,
         RecordType::PTR => {
-            println!("{}", name);
-            let mut splits: Vec<&str> = name.split('.').collect();
-            splits.pop();
+            let ip = name.clone().parse_arpa_name().unwrap().addr();
 
-
-            let response = match resolver.reverse_lookup(IpAddr::from_str(name).unwrap()).await {
-                Ok(ok) => ok,
-                Err(error) => return Err(CustomError::ResolverError(error))
-            };
-
-            for rdata in response {
-                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::PTR(rdata)));
-            }
-        }, */
-        RecordType::MX => {
-            let response = match resolver.mx_lookup(name).await {
-                Ok(ok) => ok,
-                Err(error) => return Err(CustomError::ResolverError(error))
-            };
-
-            for rdata in response {
-                answers.push(Record::from_rdata(Name::from_str(name).unwrap(), 60, RData::MX(rdata)));
+            match resolver.reverse_lookup(ip).await {
+                Ok(ok) => {
+                    for record in ok.as_lookup().records() {
+                    answers.push(record.clone())
+                    }
+                    return Ok((answers, header))
+                },
+                Err(error) => {
+                    match error.kind() {
+                        ResolveErrorKind::NoRecordsFound {..} => return Ok((vec![], header)),
+                        _ => return Err(CustomError::ResolverError(error))
+                    }
+                }
             }
         },
         _ => {
             answers = vec![];
             header.set_response_code(ResponseCode::NotImp);
+            return Ok((answers, header))
+        }
+    };
+
+    match wrapped {
+        Ok(ok) => {
+            for record in ok.records() {
+            answers.push(record.clone())
+            }
+            return Ok((answers, header))
+        },
+        Err(error) => {
+            match error.kind() {
+                ResolveErrorKind::NoRecordsFound {..} => return Ok((vec![], header)),
+                _ => return Err(CustomError::ResolverError(error))
+            }
         }
     }
-
-    return Ok((answers, header))
 }

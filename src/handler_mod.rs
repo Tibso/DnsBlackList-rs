@@ -1,8 +1,6 @@
-use crate::redis_mod;
 use crate::resolver_mod;
+use crate::matching;
 
-use smallvec::smallvec;
-use trust_dns_resolver::Name;
 use trust_dns_resolver::{
     AsyncResolver,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
@@ -14,16 +12,11 @@ use trust_dns_server::{
 };
 use trust_dns_proto::rr::{
     Record,
-    RData, 
     RecordType,
-    rdata::{TXT, SRV}
 };
 use tracing::error;
-use std::net::{Ipv4Addr, Ipv6Addr};
-use std::str::FromStr;
-use smallvec::{
-    SmallVec,
-    ToSmallVec
+use std::{
+    net::{Ipv4Addr, Ipv6Addr}
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -49,16 +42,20 @@ impl RequestHandler for Handler {
     async fn handle_request <R: ResponseHandler> (
         &self,
         request: &Request,
-        response: R
+        mut response: R
     )
     -> ResponseInfo {
-        match self.do_handle_request(request, response).await {
+        match self.do_handle_request(request, response.clone()).await {
             Ok(info) => info,
             Err(error) => {
                 error!("RequestHandler error: {}", error);
-                let mut header = Header::new();
+
+                let builder = MessageResponseBuilder::from_message_request(request);
+                let mut header = Header::response_from_request(request.header());
                 header.set_response_code(ResponseCode::ServFail);
-                header.into()
+                let message = builder.build(header, &[], &[], &[], &[]);
+                
+                response.send_response(message).await.expect("Could not send the ServFail")
             }
         }
     }
@@ -67,13 +64,14 @@ impl RequestHandler for Handler {
 pub struct Handler {
     pub redis_manager: redis::aio::ConnectionManager,
     pub matchclasses: Vec<String>,
+    pub blackhole_ips: (Ipv4Addr, Ipv6Addr),
     pub resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 }
 impl Handler {
     async fn do_handle_request <R: ResponseHandler> (
         &self,
         request: &Request,
-        response: R
+        mut response: R
     )
     -> Result<ResponseInfo, CustomError> {
         if request.op_code() != OpCode::Query {
@@ -84,85 +82,38 @@ impl Handler {
             return Err(CustomError::InvalidMessageType(request.message_type()))
         }
 
-        let domain_name = request.query().name().to_string().to_lowercase();
-        let names = domain_name.split(".");
-
-        let name_count = names.clone().count();
-        let filter_5: [u8; 5] = [3, 4, 2, 5, 1];
-        let mut order: SmallVec<[u8; 5]> = smallvec![];
-        match name_count -1 {
-            1 => order = smallvec![1],
-            2 => order = smallvec![2, 1],
-            3 => order = smallvec![3, 2, 1],
-            4 => order = smallvec![3, 4, 2, 1],
-            5 => order = filter_5.to_smallvec(),
-            _ => {
-                order.extend(1..name_count as u8);
-                order = filter_5.to_smallvec();
-                for index in 6..name_count {
-                    order.push(index as u8)
-                }
-            }
-        }
-
-        let names: Vec<&str> = names.collect();
-        for index in order {
-            let mut domain_to_check = names[name_count - (index as usize)..name_count - 1].join(".");
-            domain_to_check.push('.');
-
-            for matchclass in &self.matchclasses {
-                match redis_mod::exists(
-                    &self.redis_manager,
-                    format!("{}:{}", matchclass, domain_to_check),
-                    request.src().is_ipv4()
-                ).await {
-                    Ok(ok) => {
-                        if ok {
-                            return self.should_lie(true, request, response).await
-                        }
-                    },
-                    Err(error) => return Err(CustomError::RedisError(error))
-                };
-            }
-        }
-
-        return self.should_lie(false, request, response).await
-    }
-
-    async fn should_lie <R: ResponseHandler> (
-        &self,
-        should: bool,
-        request: &Request,
-        mut responder: R
-    )
-    -> Result<ResponseInfo, CustomError> {
         let builder = MessageResponseBuilder::from_message_request(request);
         let mut header = Header::response_from_request(request.header());
         header.set_authoritative(false);
         header.set_recursion_available(true);
 
         let answers: Vec<Record>;
-        match should {
-            false => (answers, header) = {
-                match resolver_mod::get_answers(request.query(), header, self.resolver.clone()).await {
-                    Ok(ok) => ok,
-                    Err(_) => (vec![], header)
-                }
-            },
-            true => answers = {
-                let rdata = match request.query().query_type() {
-                    RecordType::A => RData::A(Ipv4Addr::new(127, 0, 0, 1)),
-                    RecordType::AAAA => RData::AAAA(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                    RecordType::TXT => RData::TXT(TXT::new(vec!["127.0.0.1".to_string()])),
-                    RecordType::SRV => RData::SRV(SRV::new(0, 0, 1053, Name::from_str("thib-deb.").unwrap())),
-                    _ => todo!()
-                };
-                vec![Record::from_rdata(request.query().name().into(), 60, rdata)]
-            }
-        }
+        (answers, header) = match request.query().query_type() {
+            RecordType::A => matching::filter(
+                request.query(),
+                header,
+                self.matchclasses.clone(),
+                self.blackhole_ips,
+                self.redis_manager.clone(),
+                self.resolver.clone()
+            ).await?,
+            RecordType::AAAA => matching::filter(
+                request.query(),
+                header, 
+                self.matchclasses.clone(),
+                self.blackhole_ips,
+                self.redis_manager.clone(),
+                self.resolver.clone()
+            ).await?,
+            _ => resolver_mod::get_answers(
+                request.query(),
+                header,
+                self.resolver.clone()
+            ).await?
+        };
 
-        let response = builder.build(header, answers.iter(), &[], &[], &[]);
-        return match responder.send_response(response).await {
+        let message = builder.build(header, answers.iter(), &[], &[], &[]);
+        return match response.send_response(message).await {
             Ok(ok) => Ok(ok),
             Err(error) => Err(CustomError::IOError(error))
         }
