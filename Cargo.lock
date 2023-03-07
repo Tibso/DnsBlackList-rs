@@ -68,11 +68,11 @@ name = "dnsliar-rs"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "parking_lot",
  "redis",
  "serde",
  "serde_json",
  "smallvec",
- "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -2,97 +2,112 @@ mod handler_mod;
 mod redis_mod;
 mod resolver_mod;
 mod matching;
+mod enums_structs;
 
 use crate::handler_mod::Handler;
+use crate::enums_structs::{Config, DnsLrResult, WrappedErrors, ErrorKind, Confile};
 
 use trust_dns_server::ServerFuture;
+
 use tokio::net::{TcpListener, UdpSocket};
 use std::{
     time::Duration,
-    fs,
-    error::Error
+    fs
 };
-use serde::{Serialize, Deserialize};
+use tracing::{info, error, warn};
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Config { 
-    daemon_id: String,
-    redis_address: String
-}
 
 fn read_config (
     file_name: &str
 )
--> (String, String) {
-    let config: Config = {
+-> Config {
+    let confile: Confile = {
         let data = fs::read_to_string(file_name).expect("Error reading config file");
         serde_json::from_str(&data).expect("Error deserializing config file data")
     };
-    let daemon_id = config.daemon_id;
-    println!("Daemon_id is {}", daemon_id);
 
-    let redis_address = config.redis_address;
-    println!("Redis server: {}", redis_address);
-
-    return (daemon_id, redis_address)
+    info!("Daemon_id is {}", confile.daemon_id);
+    info!("{}: Redis server: {}", confile.daemon_id, confile.redis_address);
+    
+    return Config {
+        daemon_id: confile.daemon_id,
+        redis_address: confile.redis_address,
+        forwarders: vec![],
+        binds: vec![],
+        is_filtering: false,
+        blackhole_ips: None,
+        matchclasses: None
+    };
 }
 
 async fn setup_binds (
     server: &mut ServerFuture<Handler>,
-    binds: Vec<String>
-) {
-    let binds_count = binds.clone().iter().count();
-    let mut successful_bind_count: u32 = 0;
-    for bind in binds {
+    config: &Config
+)
+-> DnsLrResult<()> {
+    let bind_count = config.binds.clone().iter().count() as u32;
+    let mut successful_binds_count: u32 = 0;
+    for bind in config.binds.clone().into_iter() {
         let splits: Vec<&str> = bind.split("=").collect();
 
         match splits[0] {
             "UDP" => {
-                let socket: UdpSocket;
-                match UdpSocket::bind(splits[1]).await {
-                    Ok(ok) => socket = ok,
-                    Err(_) => continue
+                let Ok(socket) = UdpSocket::bind(splits[1]).await else {
+                    warn!("{}: Failed to bind: {}", config.daemon_id, bind);
+                    continue
                 };
                 server.register_socket(socket)
             },
             "TCP" => {
-                let listener: TcpListener;
-                match TcpListener::bind(splits[1]).await {
-                    Ok(ok) => listener = ok,
-                    Err(_) => continue
+                let Ok(listener) = TcpListener::bind(splits[1]).await else {
+                    warn!("{}: Failed to bind: {}", config.daemon_id, bind);
+                    continue
                 };
                 server.register_listener(listener, TCP_TIMEOUT)
             },
-            _ => {continue}
+            _ => {
+                warn!("{}: Failed to bind: {}", config.daemon_id, bind);
+                continue
+            }
         };
-        successful_bind_count += 1
+        successful_binds_count += 1
     }
-    println!("{} out of {} total binds were set", successful_bind_count, binds_count);
+    if successful_binds_count == bind_count {
+        info!("{}: all {} binds were set", config.daemon_id, successful_binds_count)
+    } else if successful_binds_count < bind_count {
+        warn!("{}: {} out of {} total binds were set", config.daemon_id, successful_binds_count, bind_count)
+    } else if successful_binds_count == 0 {
+        error!("{}: 0 binds were set", config.daemon_id);
+        return Err(WrappedErrors::DNSlrError(ErrorKind::SetupBindingError))
+    }
+
+    return Ok(())
 }
 
 #[tokio::main]
 async fn main()
--> Result<(), Box<dyn Error>> {
+-> DnsLrResult<()> {
     tracing_subscriber::fmt::init();
 
-    let (daemon_id, redis_address) = read_config("dnslr.conf");
+    let mut config = read_config("dnslr.conf");
 
-    let (redis_manager, matchclasses, blackhole_ips, forwarders, binds) = redis_mod::build_redis(redis_address, &daemon_id).await;
+    let redis_manager = redis_mod::build_redis(&mut config).await?;
 
-    let resolver = resolver_mod::build_resolver(forwarders);
+    let resolver = resolver_mod::build_resolver(&config);
 
-    println!("Initializing server...");
+    info!("{}: Initializing server...", config.daemon_id);
+
+    let config_binding = config.clone();
     let handler = handler_mod::Handler {
-        redis_manager, matchclasses, blackhole_ips, resolver
+        redis_manager, resolver, config
     };
     let mut server = ServerFuture::new(handler);
 
-    setup_binds(&mut server, binds).await;
+    setup_binds(&mut server, &config_binding).await?;
 
-    println!("Started {}", daemon_id);
+    info!("{}: Server started", config_binding.daemon_id);
     server.block_until_done().await?;
 
-    Ok(())
+    return Ok(())
 }

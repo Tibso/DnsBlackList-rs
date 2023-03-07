@@ -1,3 +1,4 @@
+use crate::enums_structs::{Config, WrappedErrors, ErrorKind, DnsLrResult};
 use crate::resolver_mod;
 use crate::matching;
 
@@ -10,32 +11,9 @@ use trust_dns_server::{
     proto::op::{Header, ResponseCode, OpCode, MessageType},
     authority::MessageResponseBuilder
 };
-use trust_dns_proto::rr::{
-    Record,
-    RecordType,
-};
+use trust_dns_proto::rr::{Record, RecordType};
+
 use tracing::error;
-use std::{
-    net::{Ipv4Addr, Ipv6Addr}
-};
-
-#[derive(thiserror::Error, Debug)]
-pub enum CustomError {
-    #[error("Invalid OpCode {0:}")]
-    InvalidOpCode(OpCode),
-
-    #[error("Invalid MessageType {0:}")]
-    InvalidMessageType(MessageType),
-
-    #[error("Redis Error {0:}")]
-    RedisError(redis::RedisError),
-
-    #[error("IO error: {0:}")]
-    IOError(std::io::Error),
-
-    #[error("Resolver error: {0:}")]
-    ResolverError(trust_dns_resolver::error::ResolveError)
-}
 
 #[async_trait::async_trait]
 impl RequestHandler for Handler {
@@ -63,8 +41,7 @@ impl RequestHandler for Handler {
 
 pub struct Handler {
     pub redis_manager: redis::aio::ConnectionManager,
-    pub matchclasses: Vec<String>,
-    pub blackhole_ips: (Ipv4Addr, Ipv6Addr),
+    pub config: Config,
     pub resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 }
 impl Handler {
@@ -73,13 +50,13 @@ impl Handler {
         request: &Request,
         mut response: R
     )
-    -> Result<ResponseInfo, CustomError> {
+    -> DnsLrResult<ResponseInfo> {
         if request.op_code() != OpCode::Query {
-            return Err(CustomError::InvalidOpCode(request.op_code()))
+            return Err(WrappedErrors::DNSlrError(ErrorKind::InvalidOpCode))
         }
 
         if request.message_type() != MessageType::Query {
-            return Err(CustomError::InvalidMessageType(request.message_type()))
+            return Err(WrappedErrors::DNSlrError(ErrorKind::InvalidMessageType))
         }
 
         let builder = MessageResponseBuilder::from_message_request(request);
@@ -88,34 +65,40 @@ impl Handler {
         header.set_recursion_available(true);
 
         let answers: Vec<Record>;
-        (answers, header) = match request.query().query_type() {
-            RecordType::A => matching::filter(
-                request.query(),
-                header,
-                self.matchclasses.clone(),
-                self.blackhole_ips,
-                self.redis_manager.clone(),
-                self.resolver.clone()
-            ).await?,
-            RecordType::AAAA => matching::filter(
-                request.query(),
-                header, 
-                self.matchclasses.clone(),
-                self.blackhole_ips,
-                self.redis_manager.clone(),
-                self.resolver.clone()
-            ).await?,
-            _ => resolver_mod::get_answers(
+        match self.config.is_filtering {
+            true => (answers, header) = match request.query().query_type() {
+                RecordType::A => matching::filter(
+                    request.query(),
+                    header,
+                    &self.config,
+                    self.redis_manager.clone(),
+                    self.resolver.clone()
+                ).await?,
+                RecordType::AAAA => matching::filter(
+                    request.query(),
+                    header, 
+                    &self.config,
+                    self.redis_manager.clone(),
+                    self.resolver.clone()
+                ).await?,
+                _ => resolver_mod::get_answers(
+                    request.query(),
+                    header,
+                    self.resolver.clone()
+                ).await?
+            },
+            false => (answers, header) = resolver_mod::get_answers(
                 request.query(),
                 header,
                 self.resolver.clone()
             ).await?
-        };
+        }
+
 
         let message = builder.build(header, answers.iter(), &[], &[], &[]);
         return match response.send_response(message).await {
             Ok(ok) => Ok(ok),
-            Err(error) => Err(CustomError::IOError(error))
+            Err(error) => Err(WrappedErrors::IOError(error))
         }
     }
 }
