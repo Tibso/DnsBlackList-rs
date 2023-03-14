@@ -3,8 +3,9 @@ use crate::enums_structs::DnsLrResult;
 use crate::resolver_mod;
 use crate::redis_mod;
 
-use trust_dns_client::op::{Header, LowerQuery};
+use trust_dns_client::op::Header;
 use trust_dns_client::rr::{RData, RecordType, Record};
+use trust_dns_server::server::Request;
 use trust_dns_resolver::{
     AsyncResolver,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
@@ -12,16 +13,18 @@ use trust_dns_resolver::{
 
 use tracing::info;
 use smallvec::{SmallVec, ToSmallVec, smallvec};
+use arc_swap::Guard;
+use std::sync::Arc;
 
 pub async fn filter (
-    query: &LowerQuery,
+    request: &Request,
     header: Header,
-    config: &Config,
+    config: Guard<Arc<Config>>,
     mut redis_manager: redis::aio::ConnectionManager,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
 -> DnsLrResult<(Vec<Record>, Header)> {
-    let domain_name = query.name().to_string();
+    let domain_name = request.query().name().to_string();
     let names = domain_name.split('.');
 
     let name_count = names.clone().count();
@@ -54,19 +57,19 @@ pub async fn filter (
             match redis_mod::exists(
                 &mut redis_manager,
                 format!("{}:{}", matchclass, domain_to_check),
-                query.query_type()
+                request.query().query_type()
             ).await {
                 Ok(ok) => {
                     if ok {
                         //answer IPs that respond a reset
-                        info!("{}: {} has matched {} matched", config.daemon_id, domain_to_check, matchclass);
+                        info!("{}: Request n°{}: {} has matched {}", config.daemon_id, request.id(), domain_to_check, matchclass);
 
-                        let rdata = match query.query_type() {
+                        let rdata = match request.query().query_type() {
                             RecordType::A => RData::A(blackhole_ipv4),
                             RecordType::AAAA => RData::AAAA(blackhole_ipv6),
-                            _ => panic!()
+                            _ => unreachable!()
                         };
-                        return Ok((vec![Record::from_rdata(query.name().into(), 3600, rdata)], header))
+                        return Ok((vec![Record::from_rdata(request.query().name().into(), 3600, rdata)], header))
                     };
                 },
                 Err(error) => return Err(error)
@@ -74,5 +77,5 @@ pub async fn filter (
         }
     }
 
-    return resolver_mod::get_answers(query, header, resolver).await
+    return resolver_mod::get_answers(request, header, resolver).await
 }

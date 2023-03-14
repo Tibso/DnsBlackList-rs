@@ -13,6 +13,8 @@ use trust_dns_server::{
 };
 use trust_dns_proto::rr::{Record, RecordType};
 
+use arc_swap::ArcSwap;
+use std::sync::Arc;
 use tracing::error;
 
 #[async_trait::async_trait]
@@ -26,7 +28,7 @@ impl RequestHandler for Handler {
         match self.do_handle_request(request, response.clone()).await {
             Ok(info) => info,
             Err(error) => {
-                error!("RequestHandler error: {}", error);
+                error!("Request n°{}: RequestHandler error: {}", request.id(), error);
 
                 let builder = MessageResponseBuilder::from_message_request(request);
                 let mut header = Header::response_from_request(request.header());
@@ -41,7 +43,7 @@ impl RequestHandler for Handler {
 
 pub struct Handler {
     pub redis_manager: redis::aio::ConnectionManager,
-    pub config: Config,
+    pub config: Arc<ArcSwap<Config>>,
     pub resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 }
 impl Handler {
@@ -64,31 +66,33 @@ impl Handler {
         header.set_authoritative(false);
         header.set_recursion_available(true);
 
+        let config = self.config.load();
+
         let answers: Vec<Record>;
-        match self.config.is_filtering {
+        match config.is_filtering {
             true => (answers, header) = match request.query().query_type() {
                 RecordType::A => matching::filter(
-                    request.query(),
+                    request,
                     header,
-                    &self.config,
+                    config,
                     self.redis_manager.clone(),
                     self.resolver.clone()
                 ).await?,
                 RecordType::AAAA => matching::filter(
-                    request.query(),
+                    request,
                     header, 
-                    &self.config,
+                    config,
                     self.redis_manager.clone(),
                     self.resolver.clone()
                 ).await?,
                 _ => resolver_mod::get_answers(
-                    request.query(),
+                    request,
                     header,
                     self.resolver.clone()
                 ).await?
             },
             false => (answers, header) = resolver_mod::get_answers(
-                request.query(),
+                request,
                 header,
                 self.resolver.clone()
             ).await?

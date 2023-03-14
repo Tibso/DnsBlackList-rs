@@ -1,8 +1,6 @@
 # todo
 
-- errorlogs
-- implement sighup
 - check if matching works properly
 - increments
-- fuzzing afl++
-- RwLock
+- fuzzing afl.rs
+- even better error logs (request ID)

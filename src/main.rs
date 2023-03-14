@@ -7,21 +7,35 @@ mod enums_structs;
 use crate::handler_mod::Handler;
 use crate::enums_structs::{Config, DnsLrResult, WrappedErrors, ErrorKind, Confile};
 
+use arc_swap::ArcSwap;
 use trust_dns_server::ServerFuture;
 
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::{
+    net::{TcpListener, UdpSocket}
+};
 use std::{
     time::Duration,
-    fs
+    fs,
+    sync::Arc
 };
 use tracing::{info, error, warn};
+use signal_hook_tokio::Signals;
+use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
+use futures_util::{
+    stream::StreamExt
+};
+use lazy_static::lazy_static;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn read_config (
+lazy_static! {
+    static ref CONFILE: Confile = read_confile("dnslr.conf");
+}
+
+fn read_confile (
     file_name: &str
 )
--> Config {
+-> Confile {
     let confile: Confile = {
         let data = fs::read_to_string(file_name).expect("Error reading config file");
         serde_json::from_str(&data).expect("Error deserializing config file data")
@@ -30,15 +44,7 @@ fn read_config (
     info!("Daemon_id is {}", confile.daemon_id);
     info!("{}: Redis server: {}", confile.daemon_id, confile.redis_address);
     
-    return Config {
-        daemon_id: confile.daemon_id,
-        redis_address: confile.redis_address,
-        forwarders: vec![],
-        binds: vec![],
-        is_filtering: false,
-        blackhole_ips: None,
-        matchclasses: None
-    };
+    return confile
 }
 
 async fn setup_binds (
@@ -78,11 +84,41 @@ async fn setup_binds (
     } else if successful_binds_count < bind_count {
         warn!("{}: {} out of {} total binds were set", config.daemon_id, successful_binds_count, bind_count)
     } else if successful_binds_count == 0 {
-        error!("{}: 0 binds were set", config.daemon_id);
+        error!("{}: No bind was set", config.daemon_id);
         return Err(WrappedErrors::DNSlrError(ErrorKind::SetupBindingError))
     }
 
     return Ok(())
+}
+
+async fn handle_signals (
+    mut signals: Signals,
+    arc_config: Arc<ArcSwap<Config>>,
+    mut redis_manager: redis::aio::ConnectionManager
+) {
+    while let Some(signal) = signals.next().await {
+        match signal {
+            SIGHUP => {
+                info!("Captured SIGHUP");
+
+                let Ok(new_config) = redis_mod::build_config(&mut redis_manager).await else {
+                    error!("Could not rebuild the config");
+                    continue
+                };
+                let new_config =  Arc::new(new_config);
+                arc_config.store(new_config);
+                info!("Config was rebuilt")
+            },
+            SIGUSR1 => {
+                info!("Captured SIGUSR1");
+            },
+            SIGUSR2 => {
+                info!("Captured SIGUSR2");
+
+            },
+            _ => unreachable!()
+        }
+    }
 }
 
 #[tokio::main]
@@ -90,24 +126,31 @@ async fn main()
 -> DnsLrResult<()> {
     tracing_subscriber::fmt::init();
 
-    let mut config = read_config("dnslr.conf");
+    let signals = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2])?;
+    let signals_handler = signals.handle();
 
-    let redis_manager = redis_mod::build_redis(&mut config).await?;
-
+    let mut redis_manager = redis_mod::build_manager().await?;
+    let config = redis_mod::build_config(&mut redis_manager).await?;
     let resolver = resolver_mod::build_resolver(&config);
 
     info!("{}: Initializing server...", config.daemon_id);
+    let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));
 
-    let config_binding = config.clone();
-    let handler = handler_mod::Handler {
-        redis_manager, resolver, config
+    let handler = Handler {
+        redis_manager: redis_manager.clone(), resolver, config: Arc::clone(&arc_config)
     };
+    
+    let signals_task = tokio::task::spawn(handle_signals(signals, Arc::clone(&arc_config), redis_manager));
+
     let mut server = ServerFuture::new(handler);
 
-    setup_binds(&mut server, &config_binding).await?;
+    setup_binds(&mut server, &config).await?;
 
-    info!("{}: Server started", config_binding.daemon_id);
+    info!("{}: Server started", config.daemon_id);
     server.block_until_done().await?;
+
+    signals_handler.close();
+    signals_task.await?;
 
     return Ok(())
 }

@@ -1,8 +1,8 @@
-use crate::enums_structs::{Config, WrappedErrors, DnsLrResult};
+use crate::enums_structs::{Config, WrappedErrors, DnsLrResult, ErrorKind};
 
 use tracing::info;
 use trust_dns_client::{
-    op::{LowerQuery, Header, ResponseCode},
+    op::{Header, ResponseCode},
     rr::RecordType,
 };
 use trust_dns_proto::rr::Record;
@@ -15,6 +15,7 @@ use trust_dns_resolver::{
     error::{ResolveErrorKind, ResolveError},
     lookup::Lookup
 };
+use trust_dns_server::server::Request;
 
 pub fn build_resolver (
     config: &Config
@@ -42,16 +43,16 @@ pub fn build_resolver (
 }
 
 pub async fn get_answers (
-    query: &LowerQuery,
+    request: &Request,
     mut header: Header,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
 -> DnsLrResult<(Vec<Record>, Header)> {    
     let mut answers: Vec<Record> =  Vec::new();
-    let name = query.name().into_name().unwrap();
+    let name = request.query().name().into_name().unwrap();
 
     let wrapped: Result<Lookup, ResolveError>;
-    match query.query_type() {
+    match request.query().query_type() {
         RecordType::A => wrapped = resolver.lookup(name, RecordType::A).await,
         RecordType::AAAA => wrapped = resolver.lookup(name, RecordType::AAAA).await,
         RecordType::TXT => wrapped = resolver.lookup(name, RecordType::TXT).await,
@@ -59,7 +60,7 @@ pub async fn get_answers (
         RecordType::MX => wrapped = resolver.lookup(name, RecordType::MX).await,
         RecordType::PTR => {
             let Ok(ip) = name.parse_arpa_name() else {
-                return Err(WrappedErrors::DNSlrError(crate::enums_structs::ErrorKind::InvalidArpaAddress))
+                return Err(WrappedErrors::DNSlrError(ErrorKind::InvalidArpaAddress))
             };
             
             let ip = ip.addr();
@@ -72,6 +73,7 @@ pub async fn get_answers (
                 },
                 Err(error) => {
                     match error.kind() {
+                        ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..} => Err(WrappedErrors::DNSlrError(ErrorKind::RequestRefused)),
                         ResolveErrorKind::NoRecordsFound {..} => Ok((vec![], header)),
                         _ => Err(WrappedErrors::ResolverError(error))
                     }
@@ -94,6 +96,7 @@ pub async fn get_answers (
         },
         Err(error) => {
             match error.kind() {
+                ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..} => Err(WrappedErrors::DNSlrError(ErrorKind::RequestRefused)),
                 ResolveErrorKind::NoRecordsFound {..} => Ok((vec![], header)),
                 _ => Err(WrappedErrors::ResolverError(error))
             }
