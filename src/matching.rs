@@ -3,8 +3,10 @@ use crate::enums_structs::DnsLrResult;
 use crate::resolver_mod;
 use crate::redis_mod;
 
-use trust_dns_client::op::Header;
-use trust_dns_client::rr::{RData, RecordType, Record};
+use trust_dns_client::{
+    rr::{RData, RecordType, Record},
+    op::Header
+    };
 use trust_dns_server::server::Request;
 use trust_dns_resolver::{
     AsyncResolver,
@@ -24,7 +26,8 @@ pub async fn filter (
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
 -> DnsLrResult<(Vec<Record>, Header)> {
-    let domain_name = request.query().name().to_string();
+    let mut domain_name = request.query().name().to_string();
+    domain_name.pop();
     let names = domain_name.split('.');
 
     let name_count = names.clone().count();
@@ -40,7 +43,7 @@ pub async fn filter (
             order.extend(1..=name_count as u8);
             order = filter_5.to_smallvec();
             for index in 6..=name_count {
-                order.push(index as u8)
+                order.push(index as u8);
             }
         }
     }

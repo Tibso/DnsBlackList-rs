@@ -1,6 +1,5 @@
 # todo
 
-- check if matching works properly
-- increments
+- remove useless info from subcriber fmt
 - fuzzing afl.rs
-- even better error logs (request ID)
+- increments

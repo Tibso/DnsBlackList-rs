@@ -119,7 +119,7 @@ pub async fn exists (
 
     let ser_answer = manager.req_packed_command(
         redis::Cmd::new()
-            .arg("EXISTS")
+            .arg("HEXISTS")
             .arg(fullmatch)
             .arg(qtype))
             .await?;

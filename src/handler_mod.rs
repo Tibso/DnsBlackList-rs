@@ -89,7 +89,7 @@ impl Handler {
                     request,
                     header,
                     self.resolver.clone()
-                ).await?
+                ).await? 
             },
             false => (answers, header) = resolver_mod::get_answers(
                 request,
@@ -97,7 +97,6 @@ impl Handler {
                 self.resolver.clone()
             ).await?
         }
-
 
         let message = builder.build(header, answers.iter(), &[], &[], &[]);
         return match response.send_response(message).await {
