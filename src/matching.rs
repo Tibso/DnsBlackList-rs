@@ -1,11 +1,13 @@
-use crate::Config;
-use crate::enums_structs::DnsLrResult;
-use crate::resolver_mod;
-use crate::redis_mod;
+use crate::{
+    Config,
+    enums_structs::DnsLrResult,
+    resolver_mod,
+    redis_mod,
+    CONFILE
+};
 
 use trust_dns_client::{
-    rr::{RData, RecordType, Record},
-    op::Header
+    rr::{RData, RecordType, Record}
     };
 use trust_dns_server::server::Request;
 use trust_dns_resolver::{
@@ -20,12 +22,11 @@ use std::sync::Arc;
 
 pub async fn filter (
     request: &Request,
-    header: Header,
     config: Guard<Arc<Config>>,
     mut redis_manager: redis::aio::ConnectionManager,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
--> DnsLrResult<(Vec<Record>, Header)> {
+-> DnsLrResult<Vec<Record>> {
     let mut domain_name = request.query().name().to_string();
     domain_name.pop();
     let names = domain_name.split('.');
@@ -65,20 +66,20 @@ pub async fn filter (
                 Ok(ok) => {
                     if ok {
                         //answer IPs that respond a reset
-                        info!("{}: Request n°{}: {} has matched {}", config.daemon_id, request.id(), domain_to_check, matchclass);
+                        info!("{}: request:{} {} has matched {}", CONFILE.daemon_id, request.id(), domain_to_check, matchclass);
 
                         let rdata = match request.query().query_type() {
                             RecordType::A => RData::A(blackhole_ipv4),
                             RecordType::AAAA => RData::AAAA(blackhole_ipv6),
                             _ => unreachable!()
                         };
-                        return Ok((vec![Record::from_rdata(request.query().name().into(), 3600, rdata)], header))
+                        return Ok(vec![Record::from_rdata(request.query().name().into(), 3600, rdata)])
                     };
                 },
-                Err(error) => return Err(error)
+                Err(err) => return Err(err)
             };
         }
     }
 
-    return resolver_mod::get_answers(request, header, resolver).await
+    return resolver_mod::get_answers(request, resolver).await
 }

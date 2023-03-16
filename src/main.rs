@@ -4,8 +4,10 @@ mod resolver_mod;
 mod matching;
 mod enums_structs;
 
-use crate::handler_mod::Handler;
-use crate::enums_structs::{Config, DnsLrResult, WrappedErrors, ErrorKind, Confile};
+use crate::{
+    handler_mod::Handler,
+    enums_structs::{Config, DnsLrResult, Confile, DnsLrError, DnsLrErrorKind}
+};
 
 use arc_swap::ArcSwap;
 use trust_dns_server::ServerFuture;
@@ -60,32 +62,32 @@ async fn setup_binds (
         match splits[0] {
             "UDP" => {
                 let Ok(socket) = UdpSocket::bind(splits[1]).await else {
-                    warn!("{}: Failed to bind: {}", config.daemon_id, bind);
+                    warn!("{}: Failed to bind: {}", CONFILE.daemon_id, bind);
                     continue
                 };
                 server.register_socket(socket)
             },
             "TCP" => {
                 let Ok(listener) = TcpListener::bind(splits[1]).await else {
-                    warn!("{}: Failed to bind: {}", config.daemon_id, bind);
+                    warn!("{}: Failed to bind: {}", CONFILE.daemon_id, bind);
                     continue
                 };
                 server.register_listener(listener, TCP_TIMEOUT)
             },
             _ => {
-                warn!("{}: Failed to bind: {}", config.daemon_id, bind);
+                warn!("{}: Failed to bind: {}", CONFILE.daemon_id, bind);
                 continue
             }
         };
         successful_binds_count += 1
     }
     if successful_binds_count == bind_count {
-        info!("{}: all {} binds were set", config.daemon_id, successful_binds_count)
+        info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count)
     } else if successful_binds_count < bind_count {
-        warn!("{}: {} out of {} total binds were set", config.daemon_id, successful_binds_count, bind_count)
+        warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
     } else if successful_binds_count == 0 {
-        error!("{}: No bind was set", config.daemon_id);
-        return Err(WrappedErrors::DNSlrError(ErrorKind::SetupBindingError))
+        error!("{}: No bind was set", CONFILE.daemon_id);
+        return Err(DnsLrError::from(DnsLrErrorKind::SetupBindingError))
     }
 
     return Ok(())
@@ -124,16 +126,17 @@ async fn handle_signals (
 #[tokio::main]
 async fn main()
 -> DnsLrResult<()> {
-    tracing_subscriber::fmt::init();
+    let tracing_format = tracing_subscriber::fmt::format().with_target(false).with_thread_ids(true);
+    tracing_subscriber::fmt().event_format(tracing_format).init();
 
-    let signals = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2])?;
+    let signals = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2]).expect("Could not create signal stream");
     let signals_handler = signals.handle();
 
     let mut redis_manager = redis_mod::build_manager().await?;
     let config = redis_mod::build_config(&mut redis_manager).await?;
     let resolver = resolver_mod::build_resolver(&config);
 
-    info!("{}: Initializing server...", config.daemon_id);
+    info!("{}: Initializing server...", CONFILE.daemon_id);
     let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));
 
     let handler = Handler {
@@ -146,11 +149,11 @@ async fn main()
 
     setup_binds(&mut server, &config).await?;
 
-    info!("{}: Server started", config.daemon_id);
-    server.block_until_done().await?;
+    info!("{}: Server started", CONFILE.daemon_id);
+    server.block_until_done().await.expect("An error occured when joining server futures");
 
     signals_handler.close();
-    signals_task.await?;
+    signals_task.await.expect("An error occured when joining signals futures");
 
     return Ok(())
 }

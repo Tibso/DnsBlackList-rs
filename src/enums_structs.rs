@@ -1,17 +1,14 @@
-use core::fmt;
 use std::{
-    fmt::{Display, Formatter},
     net::{SocketAddr, Ipv6Addr, Ipv4Addr},
     io
 };
 use serde::{Serialize, Deserialize};
 
-use tokio::task::JoinError;
-use trust_dns_resolver::error::ResolveError;
-use trust_dns_proto::error::ProtoError;
 use redis::RedisError;
 
-pub type DnsLrResult<T> = std::result::Result<T, WrappedErrors>;
+use trust_dns_resolver::error::ResolveError;
+
+pub type DnsLrResult<T> = std::result::Result<T, DnsLrError>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Confile {
@@ -21,7 +18,6 @@ pub struct Confile {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config { 
-    pub daemon_id: String,
     pub forwarders: Vec<SocketAddr>,
     pub binds: Vec<String>,
     pub is_filtering: bool,
@@ -30,59 +26,61 @@ pub struct Config {
 }
 
 #[derive(Debug)]
-pub enum WrappedErrors {
-    DNSlrError(ErrorKind),
-    RedisError(RedisError),
-    IOError(io::Error),
-    ResolverError(ResolveError),
-    ProtoError(ProtoError),
-    JoinError(JoinError)
+pub struct DnsLrError {
+    kind: DnsLrErrorKind
+}
+impl DnsLrError {
+    pub fn kind(&self) -> &DnsLrErrorKind {
+        &self.kind
+    }
+}
+impl From<DnsLrErrorKind> for DnsLrError {
+    fn from(kind: DnsLrErrorKind) -> Self {
+        Self {kind}
+    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum ErrorKind {
+#[derive(Debug)]
+pub enum DnsLrErrorKind {
     InvalidOpCode,
     InvalidMessageType,
     InvalidArpaAddress,
     SetupBindingError,
     SetupForwardersError,
-    RequestRefused
+    RequestRefused,
+    ExternCrateError(ExternCrateErrorKind),
 }
 
-impl Display for WrappedErrors {
-    fn fmt (&self, f: &mut Formatter) -> fmt::Result {
-        match *self {
-            WrappedErrors::DNSlrError(ref error) => write!(f, "A DNSlr error occurred {:?}", error),
-            WrappedErrors::IOError(ref error) => error.fmt(f),
-            WrappedErrors::RedisError(ref error) => error.fmt(f),
-            WrappedErrors::ResolverError(ref error) => error.fmt(f),
-            WrappedErrors::ProtoError(ref error) => error.fmt(f),
-            WrappedErrors::JoinError(ref error) => error.fmt(f)
-        }
+#[derive(Debug)]
+pub enum ExternCrateErrorKind {
+    RedisError(RedisError),
+    IOError(io::Error),
+    ResolverError(ResolveError)
+}
+/*
+impl From<RedisError> for ExternCrateErrorKind {
+    fn from(error: RedisError) -> ExternCrateErrorKind {
+        ExternCrateErrorKind::RedisError(error)
     }
 }
-impl From<RedisError> for WrappedErrors {
-    fn from (error: RedisError) -> WrappedErrors {
-        WrappedErrors::RedisError(error)
+impl From<io::Error> for ExternCrateErrorKind {
+    fn from(error: io::Error) -> ExternCrateErrorKind {
+        ExternCrateErrorKind::IOError(error)
     }
 }
-impl From<io::Error> for WrappedErrors {
-    fn from (error: io::Error) -> WrappedErrors {
-        WrappedErrors::IOError(error)
+impl From<ResolveError> for ExternCrateErrorKind {
+    fn from(error: ResolveError) -> ExternCrateErrorKind {
+        ExternCrateErrorKind::ResolverError(error)
     }
 }
-impl From<ResolveError> for WrappedErrors {
-    fn from (error: ResolveError) -> WrappedErrors {
-        WrappedErrors::ResolverError(error)
+impl From<ProtoError> for ExternCrateErrorKind {
+    fn from(error: ProtoError) -> ExternCrateErrorKind {
+        ExternCrateErrorKind::ProtoError(error)
     }
 }
-impl From<ProtoError> for WrappedErrors {
-    fn from (error: ProtoError) -> WrappedErrors {
-        WrappedErrors::ProtoError(error)
+impl From<JoinError> for ExternCrateErrorKind {
+    fn from(error: JoinError) -> ExternCrateErrorKind {
+        ExternCrateErrorKind::JoinError(error)
     }
 }
-impl From<JoinError> for WrappedErrors {
-    fn from (error: JoinError) -> WrappedErrors {
-        WrappedErrors::JoinError(error)
-    }
-}
+*/
