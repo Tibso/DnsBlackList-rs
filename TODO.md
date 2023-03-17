@@ -1,5 +1,5 @@
 # todo
 
-- remove useless info from subcriber fmt
 - fuzzing afl.rs
+- setup amount of threads in confile
 - increments

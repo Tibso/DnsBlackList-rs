@@ -21,7 +21,7 @@ pub async fn build_manager ()
     info!("{}: Redis server probe successful", &CONFILE.daemon_id);
 
     let manager = client.get_tokio_connection_manager().await.expect("Error creating the connection manager");
-    info!("{}: Connection to Redis successful", &CONFILE.daemon_id);
+    info!("{}: Redis connection manager built", &CONFILE.daemon_id);
 
     return Ok(manager)
 }
