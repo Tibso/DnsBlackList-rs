@@ -1,5 +1,5 @@
 use crate::{
-    enums_structs::{Config, DnsLrResult, DnsLrError, DnsLrErrorKind, ExternCrateErrorKind,},
+    structs::{Config, DnsLrResult, DnsLrError, DnsLrErrorKind, ExternCrateErrorKind,},
     CONFILE
 };
 

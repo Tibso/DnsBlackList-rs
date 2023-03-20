@@ -1,7 +1,7 @@
 use crate::{
     Config,
-    enums_structs::DnsLrResult,
-    resolver_mod,
+    structs::DnsLrResult,
+    resolver,
     redis_mod,
     CONFILE
 };
@@ -75,5 +75,5 @@ pub async fn filter (
         }
     }
 
-    return resolver_mod::get_answers(request, resolver).await
+    return resolver::get_answers(request, resolver).await
 }

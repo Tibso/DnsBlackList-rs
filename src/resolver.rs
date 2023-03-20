@@ -1,6 +1,6 @@
 use crate::{
     CONFILE,
-    enums_structs::{Config, DnsLrResult, DnsLrError, DnsLrErrorKind, ExternCrateErrorKind}
+    structs::{Config, DnsLrResult, DnsLrError, DnsLrErrorKind, ExternCrateErrorKind}
 };
 
 use tracing::info;

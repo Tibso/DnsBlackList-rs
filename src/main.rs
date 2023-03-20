@@ -1,12 +1,12 @@
-mod handler_mod;
+mod handler;
 mod redis_mod;
-mod resolver_mod;
+mod resolver;
 mod matching;
-mod enums_structs;
+mod structs;
 
 use crate::{
-    handler_mod::Handler,
-    enums_structs::{Config, DnsLrResult, Confile, DnsLrError, DnsLrErrorKind}
+    handler::Handler,
+    structs::{Config, DnsLrResult, Confile, DnsLrError, DnsLrErrorKind}
 };
 
 use arc_swap::ArcSwap;
@@ -134,7 +134,7 @@ async fn main()
 
     let mut redis_manager = redis_mod::build_manager().await?;
     let config = redis_mod::build_config(&mut redis_manager).await?;
-    let resolver = resolver_mod::build_resolver(&config);
+    let resolver = resolver::build_resolver(&config);
 
     info!("{}: Initializing server...", CONFILE.daemon_id);
     let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));

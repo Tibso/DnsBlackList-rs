@@ -1,6 +1,6 @@
 use crate::{
-    enums_structs::{Config, DnsLrResult, DnsLrErrorKind, ExternCrateErrorKind, DnsLrError},
-    resolver_mod,
+    structs::{Config, DnsLrResult, DnsLrErrorKind, ExternCrateErrorKind, DnsLrError},
+    resolver,
     matching,
     CONFILE
 };
@@ -127,12 +127,12 @@ impl Handler {
                     self.redis_manager.clone(),
                     self.resolver.clone()
                 ).await?,
-                _ => resolver_mod::get_answers(
+                _ => resolver::get_answers(
                     request,
                     self.resolver.clone()
                 ).await? 
             },
-            false => resolver_mod::get_answers(
+            false => resolver::get_answers(
                 request,
                 self.resolver.clone()
             ).await?
