@@ -1,5 +1,5 @@
 # todo
 
 - fuzzing afl.rs
-- setup amount of threads in confile
+- find optimum number of threads to ease IO bottleneck
 - increments

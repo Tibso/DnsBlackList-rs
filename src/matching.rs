@@ -40,10 +40,7 @@ pub async fn filter (
         3 => order.extend([3, 2, 1]),
         4 => order.extend([3, 4, 2, 1]),
         5 => order.extend(filter_5),
-        _ => {
-            order.extend(filter_5);
-            order.extend(6..=name_count as u8);
-        }
+        _ => order.extend(filter_5.into_iter().chain(6..=name_count as u8))
     }
 
     let (blackhole_ipv4, blackhole_ipv6) = config.blackhole_ips.unwrap();

@@ -123,7 +123,7 @@ async fn handle_signals (
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 8)]
+#[tokio::main]
 async fn main()
 -> DnsLrResult<()> {
     let tracing_format = tracing_subscriber::fmt::format().with_target(false).with_thread_ids(true);

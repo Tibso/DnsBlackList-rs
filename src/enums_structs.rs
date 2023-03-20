@@ -13,7 +13,7 @@ pub type DnsLrResult<T> = std::result::Result<T, DnsLrError>;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Confile {
     pub daemon_id: String,
-    pub redis_address: String,
+    pub redis_address: String
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
