@@ -16,7 +16,7 @@ use trust_dns_resolver::{
 };
 
 use tracing::info;
-use smallvec::{SmallVec, ToSmallVec, smallvec};
+use smallvec::{SmallVec, smallvec};
 use arc_swap::Guard;
 use std::sync::Arc;
 
@@ -35,17 +35,14 @@ pub async fn filter (
     let filter_5: [u8; 5] = [3, 4, 2, 5, 1];
     let mut order: SmallVec<[u8; 5]> = smallvec![];
     match name_count {
-        1 => order = smallvec![1],
-        2 => order = smallvec![2, 1],
-        3 => order = smallvec![3, 2, 1],
-        4 => order = smallvec![3, 4, 2, 1],
-        5 => order = filter_5.to_smallvec(),
+        1 => order.push(1),
+        2 => order.extend([2, 1]),
+        3 => order.extend([3, 2, 1]),
+        4 => order.extend([3, 4, 2, 1]),
+        5 => order.extend(filter_5),
         _ => {
-            order.extend(1..=name_count as u8);
-            order = filter_5.to_smallvec();
-            for index in 6..=name_count {
-                order.push(index as u8);
-            }
+            order.extend(filter_5);
+            order.extend(6..=name_count as u8);
         }
     }
 
