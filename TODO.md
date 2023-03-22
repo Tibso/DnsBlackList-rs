@@ -1,5 +1,4 @@
 # todo
 
-- fuzzing afl.rs
+- make .service file
 - find optimum number of threads to ease IO bottleneck
-- increments

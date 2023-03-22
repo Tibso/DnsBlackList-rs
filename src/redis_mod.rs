@@ -10,7 +10,8 @@ use redis::{
 
 use tracing::{info, error, warn};
 use std::{
-    net::{SocketAddr, Ipv4Addr, Ipv6Addr}
+    net::{SocketAddr, Ipv4Addr, Ipv6Addr, IpAddr},
+    time::{SystemTime, UNIX_EPOCH}
 };
 
 use trust_dns_client::rr::RecordType;
@@ -23,7 +24,7 @@ pub async fn build_manager ()
     let manager = client.get_tokio_connection_manager().await.expect("Error creating the connection manager");
     info!("{}: Redis connection manager built", &CONFILE.daemon_id);
 
-    return Ok(manager)
+    Ok(manager)
 }
 
 pub async fn build_config (
@@ -38,7 +39,7 @@ pub async fn build_config (
         blackhole_ips: None
     };
 
-    let tmp_blackhole_ips = get(manager, "blackhole_ips", &CONFILE.daemon_id).await.expect("Error fetching blackhole_ips");
+    let tmp_blackhole_ips = get(manager, "blackhole_ips").await.expect("Error fetching blackhole_ips");
     let blackhole_ips_count = tmp_blackhole_ips.clone().iter().count();
     if blackhole_ips_count != 2 {
         warn!("{}: Amount of blackhole_ips received were not 2 (must have a v4 and v6)", CONFILE.daemon_id);
@@ -50,7 +51,7 @@ pub async fn build_config (
         ));
         info!("{}: Blackhole_ips received are valid", CONFILE.daemon_id);
 
-        let tmp_matchclasses = get(manager, "matchclasses", &CONFILE.daemon_id).await.expect("Error fetching matchclasses");
+        let tmp_matchclasses = get(manager, "matchclasses").await.expect("Error fetching matchclasses");
         let matchclasses_count = tmp_matchclasses.clone().iter().count();
         if matchclasses_count == 0 {
             warn!("{}: No matchclass received", CONFILE.daemon_id);
@@ -63,7 +64,7 @@ pub async fn build_config (
         }
     }
 
-    let ser_forwarders = get(manager, "forwarders", &CONFILE.daemon_id).await.expect("Error fetching forwarders");
+    let ser_forwarders = get(manager, "forwarders").await.expect("Error fetching forwarders");
     let forwarders_count = ser_forwarders.clone().iter().count() as u8;
     if forwarders_count == 0 {
         error!("{}: No forwarder was received", CONFILE.daemon_id);
@@ -93,7 +94,7 @@ pub async fn build_config (
         return Err(DnsLrError::from(DnsLrErrorKind::SetupForwardersError))
     }
 
-    config.binds = get(manager, "binds", &CONFILE.daemon_id).await.expect("Error fetching binds");
+    config.binds = get(manager, "binds").await.expect("Error fetching binds");
     let bind_count = config.binds.clone().iter().count() as u32;
     if bind_count == 0 {
         error!("{}: No bind received", CONFILE.daemon_id);
@@ -101,12 +102,13 @@ pub async fn build_config (
     }
     info!("{}: Received {} binds", CONFILE.daemon_id, bind_count);
 
-    return Ok(config)
+    Ok(config)
 }
 
 pub async fn exists (
     manager: &mut ConnectionManager,
-    fullmatch: String,
+    matchclass: &String,
+    domain_to_check: &String,
     qtype: RecordType
 )
 -> DnsLrResult<bool> {
@@ -116,26 +118,32 @@ pub async fn exists (
         _ => unreachable!()
     };
 
-    let ser_answer = match manager.req_packed_command(
-        redis::Cmd::new().arg("HEXISTS").arg(fullmatch).arg(qtype)).await {
-            Ok(ok) => ok,
-            Err(err) => return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
+    let ser_answer = match manager.req_packed_command(redis::Cmd::new()
+        .arg("HEXISTS")
+        .arg(format!("{}:{}", matchclass, domain_to_check))
+        .arg(qtype)
+    ).await {
+        Ok(ok) => ok,
+        Err(err) => return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
     };
     
     let deser_answer = match redis::FromRedisValue::from_redis_value(&ser_answer) {
         Ok(ok) => ok,
         Err(err) => return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
     };
-    return Ok(deser_answer)
+    
+    Ok(deser_answer)
 }
 
 pub async fn get (
     manager: &mut ConnectionManager,
-    kind: &str,
-    daemon_id: &String
+    matchclass_kind: &str
 )
 -> DnsLrResult<Vec<String>> {
-    let ser_answer = match manager.req_packed_command(redis::Cmd::new().arg("HKEYS").arg(format!("{}_{}", kind, daemon_id))).await {
+    let ser_answer = match manager.req_packed_command(redis::Cmd::new()
+        .arg("HKEYS")
+        .arg(format!("{}:{}", matchclass_kind, CONFILE.daemon_id))
+    ).await {
         Ok(ok) => ok,
         Err(err) => return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
     };
@@ -145,5 +153,50 @@ pub async fn get (
         Err(err) => return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
     };
 
-    return Ok(deser_answer)
+    Ok(deser_answer)
+}
+
+pub async fn write_stats (
+    manager: &mut ConnectionManager,
+    ip : IpAddr,
+    is_match: bool
+)
+-> DnsLrResult<()> {
+    let time_epoch = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(ok) => ok.as_secs(),
+        Err(err) => return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::SystemTimeError(err))))
+    };
+
+    let set_key: &str;
+    let incr_key: &str;
+    match is_match {
+        false => {
+            set_key = "last_seen";
+            incr_key = "query_count"
+        },
+        true => {
+            set_key = "last_match";
+            incr_key = "match_count"
+        }
+    }
+
+    if let Err(err) = manager.req_packed_command(redis::Cmd::new()
+        .arg("HSET")
+        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip))
+        .arg(set_key)
+        .arg(time_epoch)
+    ).await {
+        return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
+    }
+
+    if let Err(err) = manager.req_packed_command(redis::Cmd::new()
+        .arg("HINCRBY")
+        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip))
+        .arg(incr_key)
+        .arg(1)
+    ).await {
+        return Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
+    }
+
+    Ok(())
 }

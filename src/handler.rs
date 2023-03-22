@@ -2,7 +2,8 @@ use crate::{
     structs::{Config, DnsLrResult, DnsLrErrorKind, ExternCrateErrorKind, DnsLrError},
     resolver,
     matching,
-    CONFILE
+    CONFILE,
+    redis_mod
 };
 
 use trust_dns_resolver::{
@@ -19,8 +20,9 @@ use trust_dns_proto::rr::RecordType;
 use arc_swap::ArcSwap;
 use std::sync::Arc;
 use tracing::{error, warn};
+use async_trait::async_trait;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl RequestHandler for Handler {
     async fn handle_request <R: ResponseHandler> (
         &self,
@@ -74,6 +76,10 @@ impl RequestHandler for Handler {
                                 error!("{}: request:{} src:{}://{} QUERY:{} Could not send response: {}",
                                     CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query, tmp_err
                                 ),
+                            ExternCrateErrorKind::SystemTimeError(tmp_err) =>
+                                error!("{}: request:{} src:{}://{} QUERY:{} A SystemTimeError occured: {}",
+                                CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query, tmp_err
+                                )
                         }
                         header.set_response_code(ResponseCode::ServFail);
                     }
@@ -113,18 +119,21 @@ impl Handler {
 
         let config = self.config.load();
 
+        let mut redis_manager = self.redis_manager.clone();
+        redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), false).await?;
+
         let answers = match config.is_filtering {
             true => match request.query().query_type() {
                 RecordType::A => matching::filter(
                     request,
                     config,
-                    self.redis_manager.clone(),
+                    redis_manager,
                     self.resolver.clone()
                 ).await?,
                 RecordType::AAAA => matching::filter(
                     request,
                     config,
-                    self.redis_manager.clone(),
+                    redis_manager,
                     self.resolver.clone()
                 ).await?,
                 _ => resolver::get_answers(

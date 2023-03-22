@@ -1,6 +1,6 @@
 use std::{
     net::{SocketAddr, Ipv6Addr, Ipv4Addr},
-    io
+    io, time::SystemTimeError
 };
 use serde::{Serialize, Deserialize};
 
@@ -55,32 +55,6 @@ pub enum DnsLrErrorKind {
 pub enum ExternCrateErrorKind {
     RedisError(RedisError),
     IOError(io::Error),
-    ResolverError(ResolveError)
+    ResolverError(ResolveError),
+    SystemTimeError(SystemTimeError)
 }
-/*
-impl From<RedisError> for ExternCrateErrorKind {
-    fn from(error: RedisError) -> ExternCrateErrorKind {
-        ExternCrateErrorKind::RedisError(error)
-    }
-}
-impl From<io::Error> for ExternCrateErrorKind {
-    fn from(error: io::Error) -> ExternCrateErrorKind {
-        ExternCrateErrorKind::IOError(error)
-    }
-}
-impl From<ResolveError> for ExternCrateErrorKind {
-    fn from(error: ResolveError) -> ExternCrateErrorKind {
-        ExternCrateErrorKind::ResolverError(error)
-    }
-}
-impl From<ProtoError> for ExternCrateErrorKind {
-    fn from(error: ProtoError) -> ExternCrateErrorKind {
-        ExternCrateErrorKind::ProtoError(error)
-    }
-}
-impl From<JoinError> for ExternCrateErrorKind {
-    fn from(error: JoinError) -> ExternCrateErrorKind {
-        ExternCrateErrorKind::JoinError(error)
-    }
-}
-*/

@@ -155,5 +155,5 @@ async fn main()
     signals_handler.close();
     signals_task.await.expect("An error occured when joining signals futures");
 
-    return Ok(())
+    Ok(())
 }

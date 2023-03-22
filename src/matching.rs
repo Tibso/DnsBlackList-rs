@@ -52,15 +52,12 @@ pub async fn filter (
         domain_to_check.push('.');
 
         for matchclass in matchclasses.iter() {
-            match redis_mod::exists(
-                &mut redis_manager,
-                format!("{}:{}", matchclass, domain_to_check),
-                request.query().query_type()
-            ).await {
+            match redis_mod::exists(&mut redis_manager, matchclass, &domain_to_check, request.query().query_type()).await {
                 Ok(ok) => {
                     if ok {
-                        //answer IPs that respond a reset
+                        // answer IPs that respond a reset
                         info!("{}: request:{} {} has matched {}", CONFILE.daemon_id, request.id(), domain_to_check, matchclass);
+                        redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), true).await?;
 
                         let rdata = match request.query().query_type() {
                             RecordType::A => RData::A(blackhole_ipv4),
