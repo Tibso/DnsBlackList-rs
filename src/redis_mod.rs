@@ -180,9 +180,16 @@ pub async fn write_stats (
         }
     }
 
+    let ip_string: String;
+    if ip.is_ipv6() {
+        ip_string = format!("[{}]", ip)
+    } else {
+        ip_string = ip.to_string()
+    }
+
     if let Err(err) = manager.req_packed_command(redis::Cmd::new()
         .arg("HSET")
-        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip))
+        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip_string))
         .arg(set_key)
         .arg(time_epoch)
     ).await {
@@ -191,7 +198,7 @@ pub async fn write_stats (
 
     if let Err(err) = manager.req_packed_command(redis::Cmd::new()
         .arg("HINCRBY")
-        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip))
+        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip_string))
         .arg(incr_key)
         .arg(1)
     ).await {

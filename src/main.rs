@@ -31,7 +31,7 @@ use lazy_static::lazy_static;
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
 lazy_static! {
-    static ref CONFILE: Confile = read_confile("dnslr.conf");
+    static ref CONFILE: Confile = read_confile("dnslr-rs.conf");
 }
 
 fn read_confile (
@@ -126,7 +126,10 @@ async fn handle_signals (
 #[tokio::main]
 async fn main()
 -> DnsLrResult<()> {
-    let tracing_format = tracing_subscriber::fmt::format().with_target(false).with_thread_ids(true);
+    let tracing_format = tracing_subscriber::fmt::format()
+        .with_target(false)
+        .with_thread_ids(true)
+        .without_time();
     tracing_subscriber::fmt().event_format(tracing_format).init();
 
     let signals = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2]).expect("Could not create signal stream");
