@@ -1,6 +1,6 @@
 use crate::{
     Config,
-    structs::DnsLrResult,
+    structs::{DnsLrResult, DnsLrError, DnsLrErrorKind},
     resolver,
     redis_mod,
     CONFILE
@@ -18,7 +18,7 @@ use trust_dns_resolver::{
 use tracing::info;
 use smallvec::{SmallVec, smallvec};
 use arc_swap::Guard;
-use std::sync::Arc;
+use std::{sync::Arc, net::IpAddr};
 
 pub async fn filter (
     request: &Request,
@@ -46,26 +46,44 @@ pub async fn filter (
     let (blackhole_ipv4, blackhole_ipv6) = config.blackhole_ips.unwrap();
     let matchclasses = config.matchclasses.clone().unwrap();
 
+    let record_type = match request.query().query_type() {
+        RecordType::A => "A", 
+        RecordType::AAAA => "AAAA",
+        _ => unreachable!()
+    };
+
     let names: SmallVec<[&str; 5]> = names.collect();
     for index in order {
         let mut domain_to_check = names[name_count - (index as usize)..name_count].join(".");
         domain_to_check.push('.');
 
         for matchclass in matchclasses.iter() {
-            match redis_mod::exists(&mut redis_manager, matchclass, &domain_to_check, request.query().query_type()).await {
-                Ok(ok) => {
-                    if ok {
-                        // answer IPs that respond a reset
-                        info!("{}: request:{} {} has matched {}", CONFILE.daemon_id, request.id(), domain_to_check, matchclass);
-                        redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), true).await?;
+            let full_matchclass = format!("{}:{}", matchclass, domain_to_check);
 
-                        let rdata = match request.query().query_type() {
-                            RecordType::A => RData::A(blackhole_ipv4),
-                            RecordType::AAAA => RData::AAAA(blackhole_ipv6),
-                            _ => unreachable!()
-                        };
+            match redis_mod::hget(&mut redis_manager, full_matchclass, record_type.to_owned()).await {
+                Ok(ok) => {
+                    if ok != "Nil" {
+                        info!("{}: request:{} \"{}\" has matched \"{}\"", CONFILE.daemon_id, request.id(), domain_to_check, matchclass);
+
+                        let rdata: RData;
+                        if ok == "1" {
+                            rdata = match record_type {
+                                "A" => RData::A(blackhole_ipv4),
+                                "AAAA" => RData::AAAA(blackhole_ipv6),
+                                _ => unreachable!()
+                            };
+                        } else {
+                            rdata = match ok.parse::<IpAddr>() {
+                                Ok(IpAddr::V4(ipv4)) => RData::A(ipv4),
+                                Ok(IpAddr::V6(ipv6)) => RData::AAAA(ipv6),
+                                Err(_) => return Err(DnsLrError::from(DnsLrErrorKind::InvalidRule))
+                            }
+                        } 
+
+                        redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), true).await?;
+    
                         return Ok(vec![Record::from_rdata(request.query().name().into(), 3600, rdata)])
-                    };
+                    }
                 },
                 Err(err) => return Err(err)
             };

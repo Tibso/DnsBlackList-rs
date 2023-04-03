@@ -1,6 +1,7 @@
 use std::{
     net::{SocketAddr, Ipv6Addr, Ipv4Addr},
-    io, time::SystemTimeError
+    io,
+    time::SystemTimeError
 };
 use serde::{Serialize, Deserialize};
 
@@ -24,6 +25,17 @@ pub struct Config {
     pub matchclasses: Option<Vec<String>>,
     pub blackhole_ips: Option<(Ipv4Addr, Ipv6Addr)>
 }
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            forwarders: vec![],
+            binds : vec![],
+            is_filtering: false,
+            matchclasses: None,
+            blackhole_ips: None
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct DnsLrError {
@@ -45,6 +57,7 @@ pub enum DnsLrErrorKind {
     InvalidOpCode,
     InvalidMessageType,
     InvalidArpaAddress,
+    InvalidRule,
     SetupBindingError,
     SetupForwardersError,
     RequestRefused,

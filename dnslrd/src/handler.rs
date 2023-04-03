@@ -57,10 +57,16 @@ impl RequestHandler for Handler {
                         header.set_response_code(ResponseCode::FormErr);
                     },
                     DnsLrErrorKind::RequestRefused => {
-                        error!("{}: request:{} src:{}://{} QUERY:{} A resolver's request was refused by forwarder",
+                        error!("{}: request:{} src:{}://{} QUERY:{} A resolver's request was refused by a forwarder",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::Refused);
+                    },
+                    DnsLrErrorKind::InvalidRule => {
+                        error!("{}: request:{} src:{}://{} QUERY:{} A rule seems to be broken",
+                            CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
+                    );
+                    header.set_response_code(ResponseCode::ServFail);
                     },
                     DnsLrErrorKind::ExternCrateError(dnslrerrorkind) => {
                         match dnslrerrorkind {

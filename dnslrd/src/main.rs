@@ -4,10 +4,8 @@ mod resolver;
 mod matching;
 mod structs;
 
-use crate::{
-    handler::Handler,
-    structs::{Config, DnsLrResult, Confile, DnsLrError, DnsLrErrorKind}
-};
+use handler::Handler;
+use structs::{Config, DnsLrResult, Confile, DnsLrError, DnsLrErrorKind};
 
 use arc_swap::ArcSwap;
 use trust_dns_server::ServerFuture;
@@ -23,15 +21,13 @@ use std::{
 use tracing::{info, error, warn};
 use signal_hook_tokio::Signals;
 use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
-use futures_util::{
-    stream::StreamExt
-};
+use futures_util::stream::StreamExt;
 use lazy_static::lazy_static;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
 lazy_static! {
-    static ref CONFILE: Confile = read_confile("dnslr-rs.conf");
+    static ref CONFILE: Confile = read_confile("dnslrd.conf");
 }
 
 fn read_confile (
@@ -54,10 +50,10 @@ async fn setup_binds (
     config: &Config
 )
 -> DnsLrResult<()> {
-    let bind_count = config.binds.clone().iter().count() as u32;
+    let bind_count = config.binds.len() as u32 ;
     let mut successful_binds_count: u32 = 0;
     for bind in config.binds.clone().into_iter() {
-        let splits: Vec<&str> = bind.split("=").collect();
+        let splits: Vec<&str> = bind.split('=').collect();
 
         match splits[0] {
             "UDP" => {
@@ -90,7 +86,7 @@ async fn setup_binds (
         return Err(DnsLrError::from(DnsLrErrorKind::SetupBindingError))
     }
 
-    return Ok(())
+    Ok(())
 }
 
 async fn handle_signals (
@@ -153,10 +149,10 @@ async fn main()
     setup_binds(&mut server, &config).await?;
 
     info!("{}: Server started", CONFILE.daemon_id);
-    server.block_until_done().await.expect("An error occured when joining server futures");
+    server.block_until_done().await.expect("An error occured when running server future to completion");
 
     signals_handler.close();
-    signals_task.await.expect("An error occured when joining signals futures");
+    signals_task.await.expect("An error occured when running signals future to completion");
 
     Ok(())
 }

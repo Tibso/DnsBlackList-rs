@@ -1,2 +1,4 @@
-/target
-/fuzz
+dnslrd/target
+redis-ctl/target
+
+**/Cargo.lock
