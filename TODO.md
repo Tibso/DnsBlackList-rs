@@ -2,8 +2,9 @@
 
 ## dnslrd
 - plan in case of DoS
-- matchclass counter
+- add exit codes
 
+- matchclass counter
 - find optimum number of threads to ease IO bottleneck
 - add windows signal and build option
 
