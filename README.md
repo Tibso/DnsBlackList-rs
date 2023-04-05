@@ -4,7 +4,7 @@
 
 DNS server with custom rules using [Trust-DNS](https://github.com/bluejekyll/trust-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 
-The server filters queries using a blacklist from a *Redis* server. The server lies to DNS requests asking for domains names that are known as dangerous.
+This DNS server filters queries using a blacklist from a *Redis* server. The server lies to DNS requests asking for domains names that are known as dangerous.
 
 # Repository composition
 
@@ -30,7 +30,7 @@ The server filters queries using a blacklist from a *Redis* server. The server l
 
 Upon receiving a request, a worker thread is assigned to the request. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution would allow.
 
-If the request is not a query, it is dropped and the worker responds a *Refused* response.
+If the request is not a query, it is dropped and the worker responds a *Refused* error.
 
 If the request's record type is not A or AAAA, the request is forwarded to other DNS servers to retrieve a real answer. Otherwise, the request will be filtered using its requested domain name.
 
