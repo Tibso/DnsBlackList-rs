@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
+/// The structure "clap" will parse
 pub struct Cli {
     /// Path to dnslrd.conf is required
     #[arg(required = true)]
@@ -15,6 +16,7 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+/// The subcommands enum
 pub enum Commands {
     /// Show the dnslrd configuration
     Showconf {},

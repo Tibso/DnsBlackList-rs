@@ -1,7 +1,7 @@
 mod commands;
 mod functions;
 
-use commands::{Cli, Commands};
+use crate::commands::{Cli, Commands};
 
 use anyhow::{Context, Result};
 use std::fs;
@@ -10,24 +10,32 @@ use redis::Client;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+/// The configuration file structure
 pub struct Confile {
     daemon_id: String,
     redis_address: String
 }
 
 fn main() -> Result<()> {
+    // Arguments are parsed and stored in the Cli struct
     let cli = Cli::parse();
 
+    // First argument should be the path_to_confile,
+    // which is read to build the configuration file
     let confile: Confile = {
         let tmp_string = fs::read_to_string(&cli.path_to_confile)
             .with_context(|| format!("Failed to read file from: {:?}", cli.path_to_confile))?;
         serde_json::from_str(&tmp_string)?
     };
     
+    // A client is built and probes the Redis server to check its availability
     let client = Client::open(format!("redis://{}/", confile.redis_address))?;
+    // A connection is created using the client
     let connection = client.get_connection()?;
 
-    return match &cli.command {
+    // Second argument should be the command to use
+    // Each element of the "Commands" enum calls its own function
+    match &cli.command {
         Commands::Showconf {}
             => functions::show_conf(
                 connection, confile
@@ -45,7 +53,7 @@ fn main() -> Result<()> {
                 connection, matchclass.to_owned()
             ),
         Commands::Drop {pattern}
-            => functions::drop_entries(
+            => functions::drop_matchclasses(
                 connection, pattern.to_owned()
             ),
         Commands::Dump {matchclass}

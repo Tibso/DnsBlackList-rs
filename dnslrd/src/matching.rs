@@ -15,7 +15,7 @@ use smallvec::{SmallVec, smallvec};
 use arc_swap::Guard;
 use std::{sync::Arc, net::IpAddr};
 
-/// Filters the domain name of the request
+/// Filters out requests based on its requested domain
 pub async fn filter (
     request: &Request,
     config: Guard<Arc<Config>>,

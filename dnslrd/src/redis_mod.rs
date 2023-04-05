@@ -15,7 +15,7 @@ use std::{
 };
 
 
-/// Fetches from Redis the value of a field in a hash
+/// Fetches the value of a field in a hash from Redis 
 pub async fn hget (
     manager: &mut ConnectionManager,
     hash: String,
@@ -50,7 +50,7 @@ pub async fn hget (
     Ok(deser_answer)
 }
 
-/// Fetches from Redis all the keys of a hash
+/// Fetches all the keys of a hash from Redis 
 pub async fn hkeys (
     manager: &mut ConnectionManager,
     matchclass_kind: &str
