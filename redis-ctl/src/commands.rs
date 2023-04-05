@@ -18,10 +18,10 @@ pub struct Cli {
 #[derive(Subcommand)]
 /// The subcommands enum
 pub enum Commands {
-    /// Show the dnslrd configuration
+    /// Display the dnslrd configuration
     Showconf {},
 
-    /// Set an entry
+    /// Add a new rule
     Set {
         matchclass: String,
         qtype: Option<String>,
@@ -31,7 +31,7 @@ pub enum Commands {
     /// Get info about a matchclass
     Get {matchclass: String},
 
-    /// Delete an entry
+    /// Delete a rule
     Delete {
         matchclass: String,
         qtype: Option<String>
@@ -46,7 +46,7 @@ pub enum Commands {
     /// Dump a complete matchclass
     Dump {matchclass: String},
 
-    /// Drop entries which match a matchclass pattern
+    /// Drop entries that match a matchclass pattern
     Drop {pattern: String},
 
     /// Get stats about IP addresses that match a prefix

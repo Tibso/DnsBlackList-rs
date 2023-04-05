@@ -157,6 +157,7 @@ impl Handler {
         // from the configuration to be used on this thread
         let mut redis_manager = self.redis_manager.clone();
         let resolver = self.resolver.clone();
+        
         // Write statistics about the source IP
         redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), false).await?;
 
