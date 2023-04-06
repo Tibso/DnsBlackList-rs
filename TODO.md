@@ -15,5 +15,5 @@
 
 ## redis-ctl
 - verify all commands
-- add dependance to optional values
+- add dependence to optional values
 - add exit codes

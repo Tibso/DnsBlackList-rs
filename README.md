@@ -4,21 +4,24 @@
 
 DNS server with custom rules using [Trust-DNS](https://github.com/bluejekyll/trust-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 
-This DNS server filters queries using a blacklist from a Redis server. The server lies to DNS requests asking for domains names that are known as dangerous or unwanted.
+This DNS server **filters queries** using a **blacklist** from a Redis server. The server **lies** to DNS requests asking for domains names that are known as **dangerous or unwanted** to protect its users from them.
 
 # Repository composition
 
 | Folder | Description |
 |--------|-------------|
-| dnsblrsd | Contains the server's daemon source code and its configuration |
-| redis-ctl | Contains the source code of the tool used to modify the Redis blacklist |
+| *dnsblrsd* | Contains the server's daemon source code and its configuration |
+| *redis-ctl* | Contains the source code of the tool used to modify the Redis blacklist |
 
 # Goals
 
-+ Secure, fast and stable
-+ Optimized for resilience against DDoS [TBD]
-+ Simple to setup and use
-+ Safe Rust only
++ ***Secure, fast and stable***
+
++ ***Simple to setup and use***
+
++ ***Safe Rust only***
+
++ [TBD] *Optimized for improved resilience against DDoS*
 
 # Server
 
@@ -28,15 +31,15 @@ This DNS server filters queries using a blacklist from a Redis server. The serve
 
 ## How does it work?
 
-Upon receiving a request, a worker thread is assigned to the request. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution would allow.
+Upon receiving a request, a worker thread is assigned to the request. Having **multiple threads** allows the server to handle a much **heavier load** than a single-threaded solution would allow.
 
-If the request is not a query, it is dropped and the worker responds a *Refused* error.
+If the **request is not** a **query**, it is **dropped** and the worker responds a **Refused** response code error.
 
-If the request's record type is not A or AAAA, the request is forwarded to other DNS servers to retrieve a real answer. Otherwise, the request will be filtered using its requested domain name.
+If the request's **record type is not** **A** or **AAAA**, the request is **forwarded** to other DNS servers to retrieve a **real answer**. **Otherwise**, the request will be **filtered** using its requested domain name.
 
-The requested domain name is matched against the Redis blacklist using the domain name subdomains which are optimally ordered to speed up the matching process.
+The requested **domain** name is **matched against** the Redis **blacklist** using the domain name subdomains which are optimally ordered to speed up the matching process.
 
-Redis searches for a rule for the requested domain name. If no rule is found, the request is forwarded to other DNS servers to retrieve a real answer. Otherwise, the value recovered from the rule determines what is done next. The value is either the address that has to be used as answer to this request or it indicates that the default address has to be used.
+Redis **searches** for a **rule** for the requested **domain** name. If **no rule** is found, the request is forwarded to other DNS servers to retrieve a **real answer**. **Otherwise**, the value recovered from the rule determines what is done next. The value is **either** the **custom address** that has to be used as answer to this request or it indicates that the **default address** has to be used.
 
 Finally, the response is sent to the client.
 
@@ -82,7 +85,7 @@ Options:
 Usage: redis-ctl <PATH_TO_CONFILE> showconf
 ```
 
-Displays the daemon's configuration.
+**Displays** the daemon's **configuration**.
 
 This command fetches the configuration from Redis that the daemon uses.
 
@@ -92,7 +95,7 @@ This command fetches the configuration from Redis that the daemon uses.
 Usage: redis-ctl <PATH_TO_CONFILE> set <MATCHCLASS> [QTYPE [IP]]
 ```
 
-Adds a new rule to the blacklist.
+**Adds** a new **rule** to the **blacklist**.
 
 + Example 1: add rule with default ipv6
 
@@ -108,7 +111,7 @@ Adds a new rule to the blacklist.
 Usage: redis-ctl <PATH_TO_CONFILE> get <MATCHCLASS>
 ```
 
-Retrieves all the information of a matchclass.
+**Retrieves** all the **information** of a **matchclass**.
 
 ## delete
 
@@ -116,7 +119,7 @@ Retrieves all the information of a matchclass.
 Usage: redis-ctl <PATH_TO_CONFILE> delete <MATCHCLASS> [QTYPE]
 ```
 
-Deletes a matchclass or one of its two rules.
+**Deletes** a **matchclass or** one of its two **rules**.
 
 + Example 1: delete the complete matchclass
 
@@ -132,7 +135,7 @@ Deletes a matchclass or one of its two rules.
 Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS>
 ```
 
-Feeds a matchclass with a list read line by line from a file.
+**Feeds** a **matchclass** with a **list** read line by line **from a file**.
 
 + Example:
 
@@ -156,9 +159,9 @@ Feeds a matchclass with a list read line by line from a file.
 Usage: redis-ctl <PATH_TO_CONFILE> drop <PATTERN>
 ```
 
-Deletes all matchclasses that match a pattern.
+**Deletes** all **matchclasses** that match a **pattern**.
 
-Redis' wildcards (*?) can be used on the pattern.
+Redis' **wildcards** (*?) can be used on the pattern.
 
 + Example:
 
@@ -170,9 +173,9 @@ Redis' wildcards (*?) can be used on the pattern.
 Usage: redis-ctl <PATH_TO_CONFILE> stats <PATTERN>
 ```
 
-Displays all stats that match an IP pattern.
+**Displays** all **stats** that match an IP **pattern**.
 
-Redis' wildcards (*?) can be used on the pattern.
+Redis' **wildcards** (*?) can be used on the pattern.
 
 + Example:
 
@@ -184,9 +187,9 @@ Redis' wildcards (*?) can be used on the pattern.
 Usage: redis-ctl <PATH_TO_CONFILE> clear <PATTERN>
 ```
 
-Deletes all stats that match an IP pattern.
+**Deletes** all **stats** that match an **IP pattern**.
 
-Redis' wildcards (*?) can be used on the pattern.
+Redis' **wildcards** (*?) can be used on the pattern.
 
 + Example:
 
