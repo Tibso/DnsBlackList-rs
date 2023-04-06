@@ -31,7 +31,7 @@ pub enum Commands {
     /// Get info about a matchclass
     Get {matchclass: String},
 
-    /// Delete a rule
+    /// Delete a rule or a complete matchclass
     Delete {
         matchclass: String,
         qtype: Option<String>
@@ -44,14 +44,14 @@ pub enum Commands {
     },
 
     /// Dump a complete matchclass
-    Dump {matchclass: String},
+    // Dump {matchclass: String},
 
-    /// Drop entries that match a matchclass pattern
+    /// Drop all matchclasses that match a pattern
     Drop {pattern: String},
 
-    /// Get stats about IP addresses that match a prefix
-    Stats {prefix: String},
+    /// Get stats about IP addresses that match a pattern
+    Stats {pattern: String},
 
-    /// Clear stats about IP addresses that match a prefix
-    Clear {prefix: String}
+    /// Clear stats about IP addresses that match a pattern
+    Clear {pattern: String}
 }

@@ -1,4 +1,2 @@
-dnslrd/target
-redis-ctl/target
-
+**/target
 **/Cargo.lock

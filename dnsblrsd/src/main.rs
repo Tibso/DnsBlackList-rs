@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod handler;
 mod redis_mod;
 mod resolver;
@@ -26,7 +28,7 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Creates the configuration file constant which is evaluated at runtime
 lazy_static! {
-    static ref CONFILE: Confile = read_confile("dnslrd.conf");
+    static ref CONFILE: Confile = read_confile("dnsblrsd.conf");
 }
 
 /// Reads the configuration file
@@ -52,8 +54,8 @@ async fn setup_binds (
     config: &Config
 )
 -> DnsLrResult<()> {
-    let bind_count = config.binds.len() as u32 ;
-    let mut successful_binds_count: u32 = 0;
+    let bind_count = config.binds.len() as usize ;
+    let mut successful_binds_count = 0usize;
 
     // Clones the binds vector from the configuration variable
     // The binds vector is then made into an iterable to iterate onto

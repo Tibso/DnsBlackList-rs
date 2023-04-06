@@ -176,7 +176,7 @@ pub async fn build_config (
 
     // Fetches the binds from Redis
     config.binds = hkeys(manager, "binds").await.expect("Error fetching binds");
-    let bind_count = config.binds.len() as u32;
+    let bind_count = config.binds.len() as usize;
     // If no bind is received, the server cannot start
     if bind_count == 0 {
         error!("{}: No bind received", CONFILE.daemon_id);

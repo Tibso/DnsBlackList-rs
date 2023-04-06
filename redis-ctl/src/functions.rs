@@ -30,6 +30,7 @@ fn hset (
     Ok(add_count)
 }
 
+/*
 /// Deletes a hash from Redis
 fn del (
     connection: &mut Connection,
@@ -46,6 +47,7 @@ fn del (
     // Returns 1 if the hash was successfully deleted
     Ok(del_count)
 }
+*/
 
 /// Deletes hashes from Redis
 fn del_vec (
@@ -120,15 +122,15 @@ pub fn show_conf (
     Ok(())
 }
 
-/// Deletes all stats that match an IP prefix
+/// Deletes all stats that match an IP pattern
 pub fn clear_stats (
     mut connection: Connection,
     daemon_id: String,
-    prefix: String
+    pattern: String
 )
 -> Result<()> {
-    // Fetches all stats that match the "daemon_id" and the provided prefix
-    let hashes = get_keys(&mut connection, "KEYS", format!("stats:{daemon_id}:{prefix}"))
+    // Fetches all stats that match the "daemon_id" and the provided pattern
+    let hashes = get_keys(&mut connection, "KEYS", format!("stats:{daemon_id}:{pattern}"))
         .with_context(|| format!("Error requesting hashes"))?;
 
     // Deletes all stats found
@@ -140,15 +142,15 @@ pub fn clear_stats (
     Ok(())
 }
 
-/// Displays all stats that match an IP prefix
+/// Displays all stats that match an IP pattern
 pub fn get_stats (
     mut connection: Connection,
     daemon_id: String,
-    prefix: String
+    pattern: String
 )
 -> Result<()> {
-    // Fetches all stats that match the "daemon_id" and the provided prefix
-    let hashes = get_keys(&mut connection, "KEYS", format!("stats:{daemon_id}:{prefix}"))
+    // Fetches all stats that match the "daemon_id" and the provided pattern
+    let hashes = get_keys(&mut connection, "KEYS", format!("stats:{daemon_id}:{pattern}"))
         .with_context(|| format!("Error requesting hashes"))?;
 
     // Fetches all the fields and values of each hash
@@ -171,13 +173,13 @@ pub fn get_info (
 )
 -> Result<()> {
     // Fetches all the fields of a matchclass
-    let fields = get_keys(&mut connection, "HKEYS", matchclass)
+    let fields = get_keys(&mut connection, "HGETALL", matchclass)
         .with_context(|| format!("Error requesting fields"))?;
 
     if fields.len() == 0 {
         println!("The matchclass doesn't exist or doesn't have any field")
     } else {
-        print!("\n{fields:#?}\n")
+        println!("{fields:#?}")
     }
 
     Ok(())
@@ -198,24 +200,6 @@ pub fn drop_matchclasses (
         .with_context(|| format!("Error deleting hashes"))?;
 
     println!("{del_count} hashes were deleted");    
-
-    Ok(())
-}
-
-/// Deletes a matchclass
-pub fn dump_matchclass (
-    mut connection: Connection,
-    matchclass: String
-)
--> Result<()> {
-    let del_count = del(&mut connection, matchclass)
-        .with_context(|| format!("Error deleting matchclass"))?;
-
-    if del_count == 1 {
-        println!("Matchclass sucessfully dumped")
-    } else {
-        println!("Matchclass doesn't exist")
-    }
 
     Ok(())
 }
@@ -339,7 +323,7 @@ pub fn feed_matchclass (
 }
 
 /// Adds a new rule
-pub fn set_entry (
+pub fn set_rule (
     mut connection: Connection,
     matchclass: String,
     // "qtype" and "ip" are "Option"s because a rule can be set without them
@@ -412,7 +396,7 @@ pub fn set_entry (
 }
 
 /// Deletes a rule
-pub fn delete_entry (
+pub fn delete_rule (
     mut connection: Connection,
     matchclass: String,
     qtype: Option<String>

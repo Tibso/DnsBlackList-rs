@@ -1,5 +1,5 @@
 [package]
-name = "dnslrd"
+name = "dnsblrsd"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,7 @@ arc-swap = "1.6.0"
 async-trait = "0.1.68"
 futures-util = "0.3.28"
 lazy_static = "1.4.0"
-redis = {version = "0.22.3", features = ["aio", "tokio-comp", "connection-manager"]}
+redis = {version = "0.23", features = ["aio", "tokio-comp", "connection-manager"]}
 serde = {version = "1.0.159", features = ["derive"]}
 serde_json = {version = "1.0.95", features = ["std"]}
 signal-hook = "0.3.15"

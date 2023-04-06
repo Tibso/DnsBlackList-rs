@@ -4,7 +4,7 @@
 
 DNS server with custom rules using [Trust-DNS](https://github.com/bluejekyll/trust-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 
-This DNS server filters queries using a blacklist from a *Redis* server. The server lies to DNS requests asking for domains names that are known as dangerous.
+This DNS server filters queries using a blacklist from a Redis server. The server lies to DNS requests asking for domains names that are known as dangerous or unwanted.
 
 # Repository composition
 
@@ -40,7 +40,7 @@ Redis searches for a rule for the requested domain name. If no rule is found, th
 
 Finally, the response is sent to the client.
 
-Any error that occurs during the handling of a request is handled and the approriate error is forwarded to the client.
+If any error occurs during the handling of a request, the worker forwards the approriate error to the client.
 
 ## Supported Record Types
 
@@ -62,12 +62,11 @@ Commands:
   showconf  Show the dnslrd configuration
   set       Add a new rule
   get       Get info about a matchclass
-  delete    Delete a rule
+  delete    Delete a rule or a complete matchclass
   feed      Feed a list of domains to a matchclass
-  dump      Dump a complete matchclass
-  drop      Drop entries which match a matchclass pattern
-  stats     Get stats about IP addresses that match a prefix
-  clear     Clear stats about IP addresses that match a prefix
+  drop      Drop all matchclasses that match a pattern
+  stats     Get stats about IP addresses that match a pattern
+  clear     Clear stats about IP addresses that match a pattern
   help      Print this message or the help of the given subcommand(s)
 
 Arguments:
@@ -90,42 +89,105 @@ This command fetches the configuration from Redis that the daemon uses.
 ## set
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> set <matchclass> [qtype [ip]]
+Usage: redis-ctl <PATH_TO_CONFILE> set <MATCHCLASS> [QTYPE [IP]]
 ```
 
 Adds a new rule to the blacklist.
 
 + Example 1: add rule with default ipv6
 
-  `[..] set malware#BLAZIT420:urcomputerhasvirus.com. AAAA`
+  `[..] set malware#BLAZIT420:not.honey.pot.net. AAAA`
 
 + Example 2: add rule with custom ipv4
 
-  `[..] set adult#TRAP69:daddyissues.net. A 127.0.0.1`
+  `[..] set adult#PEG69:daddyissues.com. A 127.0.0.1`
 
 ## get
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> get <matchclass>
+Usage: redis-ctl <PATH_TO_CONFILE> get <MATCHCLASS>
 ```
 
-Retrieves information about a matchclass.
-
-This command displays all the blacklisted domain names that belong to this matchclass.
+Retrieves all the information of a matchclass.
 
 ## delete
 
+``` 
+Usage: redis-ctl <PATH_TO_CONFILE> delete <MATCHCLASS> [QTYPE]
+```
 
+Deletes a matchclass or one of its two rules.
+
++ Example 1: delete the complete matchclass
+
+  `[..] delete malware#ICU2:surely.notpwned.net.`
+
++ Example 2: delete ipv6 rule of matchclass
+
+  `[..] delete malware#ICU2:surely.notpwned.net. AAAA`
 
 ## feed
 
-## dump
+```
+Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS>
+```
+
+Feeds a matchclass with a list read line by line from a file.
+
++ Example:
+
+  `[..] feed rules.list malware#AKM47`
+
++ Example line 1: line adding both custom rules for a domain name
+
+  `cicada3301.org. 127.0.0.1 ::1`
+
++ Example line 2: line adding acustom rule for ipv4 and a default rule for ipv6
+
+  `epstein.didnt.kill.himself.tv. 127.0.0.1 AAAA`
+
++ Example line 3: line adding only a default rule for ipv4
+
+  `sedun.dnes.tv. A`
 
 ## drop
 
+```
+Usage: redis-ctl <PATH_TO_CONFILE> drop <PATTERN>
+```
+
+Deletes all matchclasses that match a pattern.
+
+Redis' wildcards (*?) can be used on the pattern.
+
++ Example:
+
+  `[..] drop malware#ID?????:*`
+
 ## stats
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> stats <PATTERN>
+```
+
+Displays all stats that match an IP pattern.
+
+Redis' wildcards (*?) can be used on the pattern.
+
++ Example:
+
+  `[..] stats 123.?.??.*`
 
 ## clear
 
-## help
+```
+Usage: redis-ctl <PATH_TO_CONFILE> clear <PATTERN>
+```
 
+Deletes all stats that match an IP pattern.
+
+Redis' wildcards (*?) can be used on the pattern.
+
++ Example:
+
+  `[..] clear 123.?.??.*`

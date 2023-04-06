@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod commands;
 mod functions;
 
@@ -40,13 +42,13 @@ fn main() -> Result<()> {
             => functions::show_conf(
                 connection, confile
             ),
-        Commands::Clear {prefix}
+        Commands::Clear {pattern}
             => functions::clear_stats(
-                connection, confile.daemon_id, prefix.to_owned()
+                connection, confile.daemon_id, pattern.to_owned()
             ),
-        Commands::Stats {prefix}
+        Commands::Stats {pattern}
             => functions::get_stats(
-                connection, confile.daemon_id, prefix.to_owned()
+                connection, confile.daemon_id, pattern.to_owned()
             ),
         Commands::Get {matchclass}
             => functions::get_info(
@@ -56,20 +58,22 @@ fn main() -> Result<()> {
             => functions::drop_matchclasses(
                 connection, pattern.to_owned()
             ),
+/*
         Commands::Dump {matchclass}
             => functions::dump_matchclass(
                 connection, matchclass.to_owned()
             ),
+*/
         Commands::Feed {path_to_list, matchclass}
             => functions::feed_matchclass(
                 connection, path_to_list.to_owned(), matchclass.to_owned()
             ),
         Commands::Set {matchclass, qtype, ip}
-            => functions::set_entry(
+            => functions::set_rule(
                 connection, matchclass.to_owned(), qtype.to_owned(), ip.to_owned()
             ),
         Commands::Delete {matchclass, qtype}
-            => functions::delete_entry(
+            => functions::delete_rule(
                 connection, matchclass.to_owned(), qtype.to_owned()
             )
     }
