@@ -88,7 +88,7 @@ Lastly, the `systemctl` **command** is used to **configure** the **service**:
 
 ### **DO**
 
-+ **Modify** the **environment variable** `TOKIO_WORKER_THREADS` through the **service file** to **define** the **number of threads** the runtime has to **use**. The **optimum number of threads relies on what is choking performance**. **High I/O latency** will **require more threads** to **keep** the **system busy**, otherwise some threads would be idle waiting on I/O. Try to **find** the **sweet spot** for your system and network. ***This massively improves performance***.
++ **Modify** the **environment variable** `TOKIO_WORKER_THREADS` through the **service file** to **define** the **number of threads** the runtime has to **use**. The **optimum number of threads relies on what is choking performance**. **High I/O latency** will **require more threads** to **keep** the **system busy**, otherwise some threads would remain idle while waiting on I/O. Try to **find** the **sweet spot** for your system and network. ***This massively improves performance***.
 
 ### **DO NOT**
 
