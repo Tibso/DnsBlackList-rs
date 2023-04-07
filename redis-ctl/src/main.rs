@@ -1,3 +1,4 @@
+// This flag ensures any unsafe code will induce a compiler error 
 #![forbid(unsafe_code)]
 
 mod commands;
@@ -38,7 +39,7 @@ fn main() -> Result<()> {
     // Second argument should be the command to use
     // Each element of the "Commands" enum calls its own function
     match &cli.command {
-        Commands::Showconf {}
+        Commands::Conf {}
             => functions::show_conf(
                 connection, confile
             ),
@@ -72,7 +73,7 @@ fn main() -> Result<()> {
             => functions::set_rule(
                 connection, matchclass.to_owned(), qtype.to_owned(), ip.to_owned()
             ),
-        Commands::Delete {matchclass, qtype}
+        Commands::Del {matchclass, qtype}
             => functions::delete_rule(
                 connection, matchclass.to_owned(), qtype.to_owned()
             )

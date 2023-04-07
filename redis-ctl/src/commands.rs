@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 /// The structure "clap" will parse
 pub struct Cli {
-    /// Path to dnslrd.conf is required
+    /// Path to dnsblrsd.conf is required
     #[arg(required = true)]
     pub path_to_confile: PathBuf,
 
@@ -19,7 +19,10 @@ pub struct Cli {
 /// The subcommands enum
 pub enum Commands {
     /// Display the dnslrd configuration
-    Showconf {},
+    Conf {},
+
+    /// Get info about a matchclass
+    Get {matchclass: String},
 
     /// Add a new rule
     Set {
@@ -28,14 +31,14 @@ pub enum Commands {
         ip: Option<String>
     },
 
-    /// Get info about a matchclass
-    Get {matchclass: String},
-
     /// Delete a rule or a complete matchclass
-    Delete {
+    Del {
         matchclass: String,
         qtype: Option<String>
     },
+
+    /// Drop all matchclasses that match a pattern
+    Drop {pattern: String},
 
     /// Feed a list of domains to a matchclass
     Feed {
@@ -43,15 +46,12 @@ pub enum Commands {
         matchclass: String
     },
 
-    /// Dump a complete matchclass
-    // Dump {matchclass: String},
-
-    /// Drop all matchclasses that match a pattern
-    Drop {pattern: String},
-
-    /// Get stats about IP addresses that match a pattern
+    /// Display stats about IP addresses that match a pattern
     Stats {pattern: String},
 
     /// Clear stats about IP addresses that match a pattern
     Clear {pattern: String}
+
+    // Dump a complete matchclass
+    // Dump {matchclass: String}
 }

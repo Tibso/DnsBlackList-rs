@@ -1,3 +1,4 @@
+// This flag ensures any unsafe code will induce a compiler error 
 #![forbid(unsafe_code)]
 
 mod handler;

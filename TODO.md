@@ -1,6 +1,7 @@
 # todo
 
 ## dnslrd
+- check capabilities
 - plan in case of DoS
 - add exit codes
 
