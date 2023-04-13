@@ -9,7 +9,7 @@ mod structs;
 
 use crate::{
     handler::Handler,
-    structs::{Config, DnsLrResult, Confile, DnsLrError, DnsLrErrorKind}
+    structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind}
 };
 
 use trust_dns_server::ServerFuture;
@@ -18,7 +18,7 @@ use tokio::{
     net::{TcpListener, UdpSocket}
 };
 use arc_swap::ArcSwap;
-use std::{time::Duration, fs, sync::Arc};
+use std::{time::Duration, fs, sync::Arc, process::{ExitCode, exit}};
 use tracing::{info, error, warn};
 use signal_hook_tokio::Signals;
 use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
@@ -37,10 +37,26 @@ fn read_confile (
     file_name: &str
 )
 -> Confile {
-    // Fills the configuration file structure from the provided file path
+    // Fills the configuration file structure from the JSON at the provided file path
     let confile: Confile = {
-        let data = fs::read_to_string(file_name).expect("Error reading config file");
-        serde_json::from_str(&data).expect("Error deserializing config file data")
+        // Reads the file into a big String
+        let data = match fs::read_to_string(file_name) {
+            Ok(ok) => ok,
+            Err(err) => {
+                println!("Error reading config file: {}", err);
+                // Exits with CONFIG exitcode on error
+                exit(78)
+            }
+        };
+        // Deserializes the JSON String
+        match serde_json::from_str(&data) {
+            Ok(ok) => ok,
+            Err(err) => {
+                println!("Error deserializing config file data: {}", err);
+                // Exits with CONFIG exitcode on error
+                exit(78)
+            }
+        }
     };
 
     info!("Daemon_id is \"{}\"", confile.daemon_id);
@@ -54,7 +70,7 @@ async fn setup_binds (
     server: &mut ServerFuture<Handler>,
     config: &Config
 )
--> DnsLrResult<()> {
+-> DnsBlrsResult<()> {
     let bind_count = config.binds.len() as usize ;
     let mut successful_binds_count = 0usize;
 
@@ -109,9 +125,8 @@ async fn setup_binds (
         warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
     } else if successful_binds_count == 0 {
         // If no binds were set, returns an error
-
         error!("{}: No bind was set", CONFILE.daemon_id);
-        return Err(DnsLrError::from(DnsLrErrorKind::SetupBindingError))
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
     }
 
     Ok(())
@@ -142,10 +157,10 @@ async fn handle_signals (
                 info!("Config was rebuilt")
             },
             SIGUSR1 => {
-                info!("Captured SIGUSR1");
+                info!("Captured SIGUSR1")
             },
             SIGUSR2 => {
-                info!("Captured SIGUSR2");
+                info!("Captured SIGUSR2")
 
             },
             _ => unreachable!()
@@ -154,8 +169,8 @@ async fn handle_signals (
 }
 
 #[tokio::main]
-async fn main()
--> DnsLrResult<()> {
+async fn main() 
+-> ExitCode {
     // Defines a custom logging format
     let tracing_format = tracing_subscriber::fmt::format()
         .with_target(false)
@@ -165,20 +180,38 @@ async fn main()
     tracing_subscriber::fmt().event_format(tracing_format).init();
 
     // Prepares the signals handler
-    let signals = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2]).expect("Could not create signal stream");
+    let Ok(signals) = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2]) else {
+        error!("{}: Could not create signal stream", CONFILE.daemon_id);
+        // Returns with OSERR exitcode on error
+        return ExitCode::from(71)
+    };
     let signals_handler = signals.handle();
 
     // Builds the Redis connection manager
-    let mut redis_manager = redis_mod::build_manager().await?;
+    let mut redis_manager = match redis_mod::build_manager().await {
+        Ok(ok) => ok,
+        Err(_) => {
+            error!("{}: An error occured while building the Redis connection manager", CONFILE.daemon_id);
+            // Returns with UNAVAILABLE exitcode on error
+            return ExitCode::from(69)
+        }
+    };
     // Builds the server's configuration
-    let config = redis_mod::build_config(&mut redis_manager).await?;
+    let config = match redis_mod::build_config(&mut redis_manager).await {
+        Ok(ok) => ok,
+        Err(_) => {
+            error!("{}: An error occured while building server configuration", CONFILE.daemon_id);
+            // Returns with CONFIG exitcode on error
+            return ExitCode::from(78)
+        }
+    };
     // Builds the resolver
     let resolver = resolver::build_resolver(&config);
 
     info!("{}: Initializing server...", CONFILE.daemon_id);
 
     // Builds a thread-safe variable that stores the server's configuration
-    // The variable is optimized for read-mostly scenarios
+    // This variable is optimized for read-mostly scenarios
     let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));
 
     // Builds the server's handler structure
@@ -194,17 +227,29 @@ async fn main()
     let mut server = ServerFuture::new(handler);
 
     // Binds the server's ports
-    setup_binds(&mut server, &config).await?;
+    if let Err(err) = setup_binds(&mut server, &config).await {
+        error!("An error occured while setting up binds: {:?}", err);
+        // Returns with OSERR exitcode on error
+        return ExitCode::from(71)
+    };
 
     info!("{}: Server started", CONFILE.daemon_id);
     // Drives the server to completion (indefinite)
-    server.block_until_done().await.expect("An error occured when running server future to completion");
+    if let Err(_) = server.block_until_done().await {
+        error!("An error occured when running server future to completion");
+        // Returns with SOFTWARE exitcode on error
+        return ExitCode::from(70)
+    };
 
     // Code should not be able to reach here
 
     signals_handler.close();
     // Signals' task is driven to completion
-    signals_task.await.expect("An error occured when running signals future to completion");
+    if let Err(_) = signals_task.await {
+        error!("An error occured when running signals future to completion");
+        // Returns with SOFTWARE exitcode on error
+        return ExitCode::from(70)
+    };
 
-    Ok(())
+    ExitCode::SUCCESS
 }

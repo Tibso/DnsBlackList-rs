@@ -9,7 +9,7 @@ use redis::RedisError;
 
 use trust_dns_resolver::error::ResolveError;
 
-pub type DnsLrResult<T> = std::result::Result<T, DnsLrError>;
+pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// The configuration file structure
@@ -43,31 +43,32 @@ impl Default for Config {
 
 #[derive(Debug)]
 /// The custom error structure
-pub struct DnsLrError {
-    kind: DnsLrErrorKind
+pub struct DnsBlrsError {
+    kind: DnsBlrsErrorKind
 }
-impl DnsLrError {
+impl DnsBlrsError {
     // Links the error types to the error structure
-    pub fn kind(&self) -> &DnsLrErrorKind {
+    pub fn kind(&self) -> &DnsBlrsErrorKind {
         &self.kind
     }
 }
-impl From<DnsLrErrorKind> for DnsLrError {
+impl From<DnsBlrsErrorKind> for DnsBlrsError {
     /// Implements the From trait to construct the error structure with the error types
-    fn from(kind: DnsLrErrorKind) -> Self {
+    fn from(kind: DnsBlrsErrorKind) -> Self {
         Self {kind}
     }
 }
 
 #[derive(Debug)]
 /// The custom error types
-pub enum DnsLrErrorKind {
+pub enum DnsBlrsErrorKind {
     InvalidOpCode,
     InvalidMessageType,
     InvalidArpaAddress,
     InvalidRule,
     SetupBindingError,
-    SetupForwardersError,
+    BuildManagerError,
+    BuildConfigError,
     RequestRefused,
     // The custom error type wraps around the external crates errors
     // to enable error propagation

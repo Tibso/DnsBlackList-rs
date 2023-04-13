@@ -1,5 +1,5 @@
 use crate::{
-    structs::{DnsLrResult, DnsLrError, DnsLrErrorKind},
+    structs::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind},
     Config, resolver, redis_mod, CONFILE
 };
 
@@ -22,7 +22,7 @@ pub async fn filter (
     mut redis_manager: redis::aio::ConnectionManager,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
--> DnsLrResult<Vec<Record>> {
+-> DnsBlrsResult<Vec<Record>> {
     // Converts the domain name to string
     let mut domain_name = request.query().name().to_string();
     // Because it is a root domain name, we remove the trailing dot from the String
@@ -93,7 +93,7 @@ pub async fn filter (
                                 Ok(IpAddr::V4(ipv4)) => RData::A(ipv4),
                                 Ok(IpAddr::V6(ipv6)) => RData::AAAA(ipv6),
                                 // An error occured, the rule must be broken
-                                Err(_) => return Err(DnsLrError::from(DnsLrErrorKind::InvalidRule))
+                                Err(_) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
                             }
                         } 
 

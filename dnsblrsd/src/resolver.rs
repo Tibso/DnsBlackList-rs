@@ -1,6 +1,6 @@
 use crate::{
     CONFILE,
-    structs::{Config, DnsLrResult, DnsLrError, DnsLrErrorKind, ExternCrateErrorKind}
+    structs::{Config, DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind}
 };
 
 use trust_dns_client::{
@@ -61,7 +61,7 @@ pub async fn get_answers (
     request: &Request,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
--> DnsLrResult<Vec<Record>> {
+-> DnsBlrsResult<Vec<Record>> {
     // Answers vector is initialized to be pushed into later
     let mut answers: Vec<Record> =  vec![];
     // The domain name of the request is converted to string
@@ -84,7 +84,7 @@ pub async fn get_answers (
             // ArpaAddress is parsed, if it is invalid,
             // the appropriate error is propagated up in the stack
             let Ok(ip) = name.parse_arpa_name() else {
-                return Err(DnsLrError::from(DnsLrErrorKind::InvalidArpaAddress))
+                return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidArpaAddress))
             };
             
             // Subnet address is converted to an IP
@@ -99,10 +99,10 @@ pub async fn get_answers (
                 Err(err) => {
                     match err.kind() {
                         ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..}
-                            => Err(DnsLrError::from(DnsLrErrorKind::RequestRefused)),
+                            => Err(DnsBlrsError::from(DnsBlrsErrorKind::RequestRefused)),
                         ResolveErrorKind::NoRecordsFound {..}
                             => Ok(vec![]),
-                        _ => Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::ResolverError(err))))
+                        _ => Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::ResolverError(err))))
                     }
                 }
             }
@@ -127,12 +127,12 @@ pub async fn get_answers (
                 // If the resolver's query was refused,
                 // propagate the appropriate error up in the stack
                 ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..}
-                    => Err(DnsLrError::from(DnsLrErrorKind::RequestRefused)),
+                    => Err(DnsBlrsError::from(DnsBlrsErrorKind::RequestRefused)),
                 // If no record was found, creates an empty answer
                 ResolveErrorKind::NoRecordsFound {..}
                     => Ok(vec![]),
                 // If another error type occured, propagate it up in the stack
-                _ => Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::ResolverError(err))))
+                _ => Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::ResolverError(err))))
             }
         }
     }

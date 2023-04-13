@@ -1,5 +1,5 @@
 use crate::{
-    structs::{Config, DnsLrResult, DnsLrErrorKind, ExternCrateErrorKind, DnsLrError},
+    structs::{Config, DnsBlrsResult, DnsBlrsErrorKind, ExternCrateErrorKind, DnsBlrsError},
     resolver, matching, CONFILE, redis_mod
 };
 
@@ -52,39 +52,39 @@ impl RequestHandler for Handler {
                 // The new header's response code is set to the appropriate ResponseCode
                 let request_info = request.request_info();
                 match err.kind() {
-                    DnsLrErrorKind::InvalidOpCode => {
+                    DnsBlrsErrorKind::InvalidOpCode => {
                         warn!("{}: request:{} src:{}://{} QUERY:{} InvalidOpCode received",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::Refused);
                     },
-                    DnsLrErrorKind::InvalidMessageType => {
+                    DnsBlrsErrorKind::InvalidMessageType => {
                         warn!("{}: request:{} src:{}://{} QUERY:{} InvalidMessageType received",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::Refused);
                     },
-                    DnsLrErrorKind::InvalidArpaAddress => {
+                    DnsBlrsErrorKind::InvalidArpaAddress => {
                         warn!("{}: request:{} src:{}://{} QUERY:{} InvalidArpAddress received",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::FormErr);
                     },
-                    DnsLrErrorKind::RequestRefused => {
+                    DnsBlrsErrorKind::RequestRefused => {
                         error!("{}: request:{} src:{}://{} QUERY:{} A resolver's request was refused by a forwarder",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::Refused);
                     },
-                    DnsLrErrorKind::InvalidRule => {
+                    DnsBlrsErrorKind::InvalidRule => {
                         error!("{}: request:{} src:{}://{} QUERY:{} A rule seems to be broken",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                     );
                     header.set_response_code(ResponseCode::ServFail);
                     },
-                    DnsLrErrorKind::ExternCrateError(dnslrerrorkind) => {
+                    DnsBlrsErrorKind::ExternCrateError(dns_blrs_errorkind) => {
                         // These errors are from external crates
-                        match dnslrerrorkind {
+                        match dns_blrs_errorkind {
                             ExternCrateErrorKind::ResolverError(tmp_err) =>
                                 error!("{}: request:{} src:{}://{} QUERY:{} A resolver had an error: {}",
                                     CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query, tmp_err
@@ -127,17 +127,17 @@ impl Handler {
         request: &Request,
         mut response: R
     )
-    -> DnsLrResult<ResponseInfo> {
+    -> DnsBlrsResult<ResponseInfo> {
         // Each new request triggers this code on a designated thread
 
         // Filters out unwanted query types
         if request.op_code() != OpCode::Query {
-            return Err(DnsLrError::from(DnsLrErrorKind::InvalidOpCode))
+            return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidOpCode))
         }
 
         // Filters out unwanted message types
         if request.message_type() != MessageType::Query {
-            return Err(DnsLrError::from(DnsLrErrorKind::InvalidMessageType))
+            return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidMessageType))
         }
 
         // Creates the message response builder based on the request
@@ -193,7 +193,7 @@ impl Handler {
         // Attempts to send the response
         match response.send_response(message).await {
             Ok(ok) => Ok(ok),
-            Err(err) => Err(DnsLrError::from(DnsLrErrorKind::ExternCrateError(ExternCrateErrorKind::IOError(err))))
+            Err(err) => Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IOError(err))))
         }
     }
 }
