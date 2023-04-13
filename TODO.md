@@ -9,7 +9,6 @@
 
 ## dnslrd
 - plan in case of DoS
-- add exit codes
 - clear resolver cache on SIGUSR1
 - SIGUSR2 is_filtering switch?
 

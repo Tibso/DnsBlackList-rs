@@ -51,7 +51,4 @@ pub enum Commands {
 
     /// Clear stats about IP addresses that match a pattern
     Clear {pattern: String}
-
-    // Dump a complete matchclass
-    // Dump {matchclass: String}
 }
