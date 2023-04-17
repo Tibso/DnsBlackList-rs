@@ -33,13 +33,11 @@ This DNS server **filters queries** using a **blacklist** from a Redis server. T
 
 ## **How does it work?**
 
-Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having **multiple threads** allows the server to handle a much **heavier load** than a single-threaded solution would allow.
+Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution would allow.
 
-If the **request is not** a **query**, it is **dropped** and the worker responds a **Refused** response code error.
+Based on its **request type** and **record type**, the request will either be **dropped**, **forwarded** to retrieve a **real answer** or **filtered** using its **requested domain name**.
 
-If the request's **record type is not** **A** or **AAAA**, the request is **forwarded** to other DNS servers to retrieve a **real answer**. **Otherwise**, the request will be **filtered** using its requested domain name.
-
-The requested **domain** name is **matched against** the Redis **blacklist** using the domain name subdomains which are optimally ordered to speed up the matching process.
+When **filtered**, the requested **domain** name is **matched against** the Redis **blacklist** using the domain name subdomains which are optimally ordered to speed up the matching process.
 
 Redis **searches** for a **rule** for the requested **domain** name. If **no rule** is found, the request is forwarded to other DNS servers to retrieve a **real answer**. **Otherwise**, the value recovered from the rule determines what is done next. The value is **either** the **custom address** that has to be used as **answer** to this request **or** it indicates that the **default address** has to be used as **answer**.
 

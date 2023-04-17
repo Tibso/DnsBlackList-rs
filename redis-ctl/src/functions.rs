@@ -133,7 +133,7 @@ pub fn get_stats (
 
         let split: Vec<&str> = hash.split(':').collect();
 
-        print!("Stats for hash: \"{}\"\n\n{:#?}\n", split[2], keys)
+        print!("Stats for hash: \"{}\":\n{:#?}\n", split[2], keys)
     }
 
     Ok(ExitCode::SUCCESS)

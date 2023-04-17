@@ -121,12 +121,12 @@ async fn setup_binds (
     }
     if successful_binds_count == bind_count {
         info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count)
-    } else if successful_binds_count < bind_count {
-        warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
     } else if successful_binds_count == 0 {
         // If no binds were set, returns an error
         error!("{}: No bind was set", CONFILE.daemon_id);
         return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
+    } else if successful_binds_count < bind_count {
+        warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
     }
 
     Ok(())
@@ -136,11 +136,12 @@ async fn setup_binds (
 async fn handle_signals (
     mut signals: Signals,
     arc_config: Arc<ArcSwap<Config>>,
-    mut redis_manager: redis::aio::ConnectionManager
+    mut redis_manager: redis::aio::ConnectionManager,
 ) {
     // Awaits for a signal to be captured
     while let Some(signal) = signals.next().await {
         match signal {
+            // Receiving a SIGHUP signal causes a reload of the server's configuration
             SIGHUP => {
                 info!("Captured SIGHUP");
 
@@ -156,12 +157,27 @@ async fn handle_signals (
 
                 info!("Config was rebuilt")
             },
+            // Receiving a SIGUSR1 signal switches ON/OFF the server's filtering
             SIGUSR1 => {
-                info!("Captured SIGUSR1")
-            },
-            SIGUSR2 => {
-                info!("Captured SIGUSR2")
+                info!("Captured SIGUSR1");
 
+                // Copies the configuration stored in the thread-safe variable
+                let mut config = arc_config.load_full().as_ref().clone();
+                // Switches the boolean
+                config.is_filtering = !config.is_filtering;
+
+                if config.is_filtering {
+                    info!("The server is now filtering")
+                } else {
+                    info!("The server is not filtering anymore")
+                }
+            
+                // Stores the modified configuration back into the thread-safe variable
+                arc_config.store(Arc::new(config));
+            },
+            // Receiving a SIGUSR2 signal clears the resolver's cache
+            SIGUSR2 => {
+                info!("Captured SIGUSR2");
             },
             _ => unreachable!()
         }

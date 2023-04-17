@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
+#[command(about = "This is a command-line tool used to modify the Redis blacklist", long_about = None)]
 /// The structure "clap" will parse
 pub struct Cli {
     /// Path to dnsblrsd.conf is required

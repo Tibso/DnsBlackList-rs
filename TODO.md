@@ -1,27 +1,24 @@
 # todo
 
-- hardening
+- hardening                             ==> new user & nftables & SELinux
 - remove unnecessary services
-- shield with dnsdist
+- shield with dnsdist                   ==> rate limiting & eBPF kernel filtering
 - limits
 - restart automatically on failure?
-- find already existing solution
 
 ## dnslrd
-- plan in case of DoS
-- clear resolver cache on SIGUSR1
+- clear resolver cache on SIGUSR1       ==> water torture mitigation
 - SIGUSR2 is_filtering switch?
 
 - matchclass counter
 - find optimum number of threads to ease IO bottleneck
 - add windows signal and build option
 
-- is_filtering more efficient alternative
 - anyhow with context ?
 - configure crate ?
 - redis connection pool? (r2d2 ?)
 
 ## redis-ctl
-- verify all commands
-- add dependence to optional values
-- add exit codes
+- modify daemon's configuration with new commands
+
+- add clarity to optional values?

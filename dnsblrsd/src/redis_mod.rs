@@ -215,11 +215,11 @@ pub async fn build_config (
             // If at least 1 forwarder socket is valid, the server can start
             if valid_forwarder_count == forwarders_count {
                 info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
-            } else if valid_forwarder_count < forwarders_count {
-                warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
             } else if valid_forwarder_count == 0 {
                 error!("{}: No forwarder is valid", CONFILE.daemon_id);
                 return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
+            } else if valid_forwarder_count < forwarders_count {
+                warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
             }
         }
     }
