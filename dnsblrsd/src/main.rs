@@ -12,6 +12,7 @@ use crate::{
     structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind}
 };
 
+use trust_dns_resolver::{AsyncResolver, name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}};
 use trust_dns_server::ServerFuture;
 
 use tokio::{
@@ -136,6 +137,7 @@ async fn setup_binds (
 async fn handle_signals (
     mut signals: Signals,
     arc_config: Arc<ArcSwap<Config>>,
+    arc_resolver: Arc<AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>>,
     mut redis_manager: redis::aio::ConnectionManager,
 ) {
     // Awaits for a signal to be captured
@@ -178,6 +180,9 @@ async fn handle_signals (
             // Receiving a SIGUSR2 signal clears the resolver's cache
             SIGUSR2 => {
                 info!("Captured SIGUSR2");
+
+                arc_resolver.clear_cache();
+                info!("The resolver's cache was cleared")
             },
             _ => unreachable!()
         }
@@ -221,8 +226,11 @@ async fn main()
             return ExitCode::from(78)
         }
     };
+    
     // Builds the resolver
     let resolver = resolver::build_resolver(&config);
+    // The resolver is stored into a thread-safe variable
+    let arc_resolver = Arc::new(resolver);
 
     info!("{}: Initializing server...", CONFILE.daemon_id);
 
@@ -231,13 +239,13 @@ async fn main()
     let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));
 
     // Builds the server's handler structure
-    // This variable is placed into another thread-safe variable by the TrustDns library and is given to each thread
+    // This variable is stored into another thread-safe variable by the TrustDns library and is given to each thread
     let handler = Handler {
-        redis_manager: redis_manager.clone(), resolver, config: Arc::clone(&arc_config)
+        redis_manager: redis_manager.clone(), arc_config: arc_config.clone(), arc_resolver: arc_resolver.clone()
     };
     
     // Spawns a task thread that handles the signals
-    let signals_task = tokio::task::spawn(handle_signals(signals, Arc::clone(&arc_config), redis_manager));
+    let signals_task = tokio::task::spawn(handle_signals(signals, arc_config.clone(), arc_resolver.clone(), redis_manager));
 
     // Creates the server's future
     let mut server = ServerFuture::new(handler);

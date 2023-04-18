@@ -117,8 +117,8 @@ impl RequestHandler for Handler {
 
 pub struct Handler {
     pub redis_manager: redis::aio::ConnectionManager,
-    pub config: Arc<ArcSwap<Config>>,
-    pub resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
+    pub arc_config: Arc<ArcSwap<Config>>,
+    pub arc_resolver: Arc<AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>>
 }
 impl Handler {
     /// Handles the request
@@ -151,12 +151,13 @@ impl Handler {
         header.set_recursion_available(true);
 
         // Borrows the configuration from the thread-safe variable
-        let config = self.config.load();
+        let config = self.arc_config.load();
 
-        // Clones the Redis connection manager and the resolver
-        // from the configuration to be used on this thread
+        // Copies the resolver out of the thread-safe variable
+        let resolver = self.arc_resolver.as_ref().clone();
+
+        // Copies the Redis connection manager
         let mut redis_manager = self.redis_manager.clone();
-        let resolver = self.resolver.clone();
         
         // Write statistics about the source IP
         redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), false).await?;
