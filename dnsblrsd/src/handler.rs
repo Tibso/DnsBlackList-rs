@@ -1,6 +1,6 @@
 use crate::{
     structs::{Config, DnsBlrsResult, DnsBlrsErrorKind, ExternCrateErrorKind, DnsBlrsError},
-    resolver, matching, CONFILE, redis_mod
+    resolver, filtering, CONFILE, redis_mod
 };
 
 use trust_dns_resolver::{
@@ -53,19 +53,19 @@ impl RequestHandler for Handler {
                 let request_info = request.request_info();
                 match err.kind() {
                     DnsBlrsErrorKind::InvalidOpCode => {
-                        warn!("{}: request:{} src:{}://{} QUERY:{} InvalidOpCode received",
+                        warn!("{}: request:{} src:{}://{} QUERY:{} An \"InvalidOpCode\" error occured",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::InvalidMessageType => {
-                        warn!("{}: request:{} src:{}://{} QUERY:{} InvalidMessageType received",
+                        warn!("{}: request:{} src:{}://{} QUERY:{} An \"InvalidMessageType\" error occured",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::InvalidArpaAddress => {
-                        warn!("{}: request:{} src:{}://{} QUERY:{} InvalidArpAddress received",
+                        warn!("{}: request:{} src:{}://{} QUERY:{} An \"InvalidArpAddress\" error occured",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                         );
                         header.set_response_code(ResponseCode::FormErr);
@@ -79,8 +79,14 @@ impl RequestHandler for Handler {
                     DnsBlrsErrorKind::InvalidRule => {
                         error!("{}: request:{} src:{}://{} QUERY:{} A rule seems to be broken",
                             CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
-                    );
-                    header.set_response_code(ResponseCode::ServFail);
+                        );
+                        header.set_response_code(ResponseCode::ServFail);
+                    },
+                    DnsBlrsErrorKind::NotImpl => {
+                        warn!("{}: request:{} src:{}://{} QUERY:{} This \"query_type\" is not implemented",
+                            CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
+                        );
+                        header.set_response_code(ResponseCode::NotImp);
                     },
                     DnsBlrsErrorKind::ExternCrateError(dns_blrs_errorkind) => {
                         // These errors are from external crates
@@ -98,7 +104,7 @@ impl RequestHandler for Handler {
                                     CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query, tmp_err
                                 ),
                             ExternCrateErrorKind::SystemTimeError(tmp_err) =>
-                                error!("{}: request:{} src:{}://{} QUERY:{} A SystemTimeError occured: {}",
+                                error!("{}: request:{} src:{}://{} QUERY:{} A \"SystemTimeError\" occured: {}",
                                 CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query, tmp_err
                                 )
                         }
@@ -164,33 +170,17 @@ impl Handler {
 
         // Fetches the answer from the appropriate functions
         // Filters the domain name if the request is of RecordType A or AAAA
-        let answers = match config.is_filtering {
+        let records = match config.is_filtering {
             true => match request.query().query_type() {
-                RecordType::A => matching::filter(
-                    request,
-                    config,
-                    redis_manager,
-                    resolver
-                ).await?,
-                RecordType::AAAA => matching::filter(
-                    request,
-                    config,
-                    redis_manager,
-                    resolver
-                ).await?,
-                _ => resolver::get_answers(
-                    request,
-                    resolver
-                ).await? 
+                RecordType::A => filtering::filter(request, &config, &mut redis_manager, resolver).await?,
+                RecordType::AAAA => filtering::filter(request, &config, &mut redis_manager, resolver).await?,
+                _ => resolver::get_records(request, resolver).await? 
             },
-            false => resolver::get_answers(
-                request,
-                resolver
-            ).await?
+            false => resolver::get_records(request, resolver).await?
         };
 
         // Message response is built to send the response
-        let message = builder.build(header, answers.iter(), &[], &[], &[]);
+        let message = builder.build(header, &records, &[], &[], &[]);
         // Attempts to send the response
         match response.send_response(message).await {
             Ok(ok) => Ok(ok),

@@ -3,6 +3,7 @@
 
 mod commands;
 mod functions;
+mod redis_mod;
 
 use crate::commands::{Cli, Commands};
 
@@ -67,7 +68,7 @@ fn main() -> ExitCode {
     // Second argument should be the command to use
     // Each element of the "Commands" enum calls its own function
     let result = match &cli.command {
-        Commands::Conf {}
+        Commands::ShowConf {}
             => functions::show_conf(
                 connection, confile
             ),

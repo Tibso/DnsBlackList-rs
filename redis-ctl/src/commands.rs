@@ -19,8 +19,8 @@ pub struct Cli {
 #[derive(Subcommand)]
 /// The subcommands enum
 pub enum Commands {
-    /// Display the dnslrd configuration
-    Conf {},
+    /// Display the dnsblrsd configuration
+    ShowConf {},
 
     /// Get info about a matchclass
     Get {matchclass: String},
@@ -51,5 +51,5 @@ pub enum Commands {
     Stats {pattern: String},
 
     /// Clear stats about IP addresses that match a pattern
-    Clear {pattern: String}
+    Clear {pattern: String},
 }

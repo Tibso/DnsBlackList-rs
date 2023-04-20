@@ -1,84 +1,10 @@
-use crate::Confile;
+use crate::{Confile, redis_mod::{get_keys, del_vec, hset, hdel}};
 
 use std::{
-    path::PathBuf, fs::File, net::IpAddr,
-    io::{BufReader, BufRead},
-    process::ExitCode
+    path::PathBuf, fs::File, net::IpAddr, process::ExitCode,
+    io::{BufReader, BufRead}
 };
-use redis::{Connection, Cmd, FromRedisValue, ConnectionLike, RedisResult};
-
-/// Sets a value of a field in a hash in Redis
-fn hset (
-    connection: &mut Connection,
-    hash: String,
-    field: &str,
-    value: String
-)
--> RedisResult<usize> {
-    // This Redis command sets a value of a field in a hash if it does not already exist
-    // The command returns the number of values added in a serialized "Value"
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg("HSET")
-        .arg(hash)
-        .arg(field)
-        .arg(value)
-    )?;
-    // Deserializes "Value"
-    let add_count = FromRedisValue::from_redis_value(&ser_answer)?;
-
-    // Returns 1 if the field was successfully added
-    Ok(add_count)
-}
-
-/// Deletes hashes from Redis
-fn del_vec (
-    connection: &mut Connection,
-    hashes: Vec<String>
-)
--> RedisResult<usize> {
-    // This Redis command deletes hashes if they exists
-    // The command takes a vector as input
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg("DEL")
-        .arg(hashes))?;
-    let del_count = FromRedisValue::from_redis_value(&ser_answer)?;
-
-    // Returns the amount of hashes deleted
-    Ok(del_count)
-}
-
-/// Deletes the field of a hash from Redis
-fn hdel (
-    connection: &mut Connection,
-    hash: String,
-    field: &str
-)
--> RedisResult<usize> {
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg("HDEl")
-        .arg(hash)
-        .arg(field))?;
-    let del_count = FromRedisValue::from_redis_value(&ser_answer)?;
-
-    // Returns 1 if the field was successfully deleted
-    Ok(del_count)
-}
-
-/// Fetches all the keys of a hash from Redis
-fn get_keys (
-    connection: &mut Connection,
-    command: &str,
-    hash: String
-)
--> RedisResult<Vec<String>> {
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg(command)
-        .arg(hash))?;
-    let deser_answer = FromRedisValue::from_redis_value(&ser_answer)?;
-
-    // Returns a vector of strings
-    Ok(deser_answer)
-}
+use redis::{Connection, RedisResult};
 
 /// Displays the daemon's configuration
 pub fn show_conf (
@@ -87,10 +13,10 @@ pub fn show_conf (
 )
 -> RedisResult<ExitCode> {
     // Retrives the daemon's configuration as the server would when starting
-    let binds = get_keys(&mut connection, "HKEYS", format!("binds:{}", confile.daemon_id))?;
-    let forwarders = get_keys(&mut connection, "HKEYS", format!("forwarders:{}", confile.daemon_id))?;
-    let matchclasses = get_keys(&mut connection, "HKEYS", format!("matchclasses:{}", confile.daemon_id))?;
-    let blackhole_ips = get_keys(&mut connection, "HKEYS", format!("blackhole_ips:{}", confile.daemon_id))?;
+    let binds = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:binds:{}", confile.daemon_id))?;
+    let forwarders = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:forwarders:{}", confile.daemon_id))?;
+    let matchclasses = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:matchclasses:{}", confile.daemon_id))?;
+    let blackhole_ips = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:blackhole_ips:{}", confile.daemon_id))?;
 
     print!("{:#?}\nbinds {:#?}\nforwarders {:#?}\nmatchclasses {:#?}\nblackhole_ips {:#?}\n",
         confile, binds, forwarders, matchclasses, blackhole_ips
@@ -106,8 +32,8 @@ pub fn clear_stats (
     pattern: String
 )
 -> RedisResult<ExitCode> {
-    // Fetches all stats that match the "daemon_id" and the provided pattern
-    let hashes = get_keys(&mut connection, "KEYS", format!("stats:{daemon_id}:{pattern}"))?;
+    // Fetches all stats that match "daemon_id" and "pattern"
+    let hashes = get_keys(&mut connection, "KEYS", format!("dnsblrsd:stats:{daemon_id}:{pattern}"))?;
 
     // Deletes all stats found
     let del_count = del_vec(&mut connection, hashes)?;
@@ -124,8 +50,8 @@ pub fn get_stats (
     pattern: String
 )
 -> RedisResult<ExitCode> {
-    // Fetches all stats that match the "daemon_id" and the provided pattern
-    let hashes = get_keys(&mut connection, "KEYS", format!("stats:{daemon_id}:{pattern}"))?;
+    // Fetches all stats that match "daemon_id" and "pattern"
+    let hashes = get_keys(&mut connection, "KEYS", format!("dnsblrsd:stats:{daemon_id}:{pattern}"))?;
 
     // Fetches all the fields and values of each hash
     for hash in hashes {
@@ -148,7 +74,7 @@ pub fn get_info (
     // Fetches all the fields of a matchclass
     let fields = get_keys(&mut connection, "HGETALL", matchclass)?;
 
-    if fields.len() == 0 {
+    if fields.is_empty() {
         println!("The matchclass doesn't exist or doesn't have any field")
     } else {
         println!("{fields:#?}")
@@ -295,7 +221,7 @@ pub fn feed_matchclass (
 /// Adds a new rule
 pub fn set_rule (
     mut connection: Connection,
-    matchclass: String,
+    rule: String,
     // "qtype" and "ip" are "Option"s because a rule can be set without them
     qtype: Option<String>,
     ip: Option<String>
@@ -321,13 +247,13 @@ pub fn set_rule (
 
                     // Provided "ip" must be v4
                     if ip.is_ipv4() {
-                        add_count += hset(&mut connection, matchclass.clone(), "A", ip.to_string())?
+                        add_count += hset(&mut connection, rule, "A", ip.to_string())?
                     } else {
                         println!("Provided IP was not v4")
                     }
                 },
                 // If "ip" value not provided, sets a default rule for v4
-                None => add_count += hset(&mut connection, matchclass.clone(), "A", "1".to_string())?
+                None => add_count += hset(&mut connection, rule, "A", "1".to_string())?
             }
         },
         // If "qtype" specifies v6
@@ -344,13 +270,13 @@ pub fn set_rule (
 
                     // Provided "ip" must be v6
                     if ip.is_ipv6() {
-                        add_count += hset(&mut connection, matchclass.clone(), "AAAA", ip.to_string())?
+                        add_count += hset(&mut connection, rule, "AAAA", ip.to_string())?
                     } else {
                         println!("Provided IP was not v6")
                     }
                 },
                 // If "ip" value not provided, sets a default rule for v6
-                None => add_count += hset(&mut connection, matchclass.clone(), "AAAA", "1".to_string())?
+                None => add_count += hset(&mut connection, rule, "AAAA", "1".to_string())?
             }
         },
         // Provided "qtype" was not "A" or "AAAA" so it is incorrect
@@ -359,8 +285,8 @@ pub fn set_rule (
         None => {
             println!("Record type not provided, adding default rule for both v4 and v6");
 
-            add_count += hset(&mut connection, matchclass.clone(), "A", "1".to_string())?;
-            add_count += hset(&mut connection, matchclass.clone(), "AAAA", "1".to_string())?
+            add_count += hset(&mut connection, rule.clone(), "A", "1".to_string())?;
+            add_count += hset(&mut connection, rule, "AAAA", "1".to_string())?
         }
     }
 
@@ -372,7 +298,7 @@ pub fn set_rule (
 /// Deletes a rule
 pub fn delete_rule (
     mut connection: Connection,
-    matchclass: String,
+    rule: String,
     qtype: Option<String>
 )
 -> RedisResult<ExitCode> {
@@ -381,16 +307,16 @@ pub fn delete_rule (
     // Checks if "qtype" is provided, if it is, tries to delete the approriate rule
     match qtype.as_deref() {
         // If "qtype" specifies v4
-        Some("A") => del_count += hdel(&mut connection, matchclass.clone(), "A")?,
+        Some("A") => del_count += hdel(&mut connection, rule, "A")?,
             // If "qtype" specifies v6
-        Some("AAAA") => del_count += hdel(&mut connection, matchclass.clone(), "AAAA")?,
+        Some("AAAA") => del_count += hdel(&mut connection, rule, "AAAA")?,
         Some(_) => println!("Invalid record type provided"),
         // "qtype" was not provided, the rule for both types are deleted
         _ => {
             println!("Record type not provided, deleting rule for both v4 and v6");
 
-            del_count += hdel(&mut connection, matchclass.clone(), "A")?;
-            del_count += hdel(&mut connection, matchclass.clone(), "AAAA")?
+            del_count += hdel(&mut connection, rule.clone(), "A")?;
+            del_count += hdel(&mut connection, rule, "AAAA")?
         }
     }
 

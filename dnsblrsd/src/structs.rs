@@ -66,6 +66,7 @@ pub enum DnsBlrsErrorKind {
     InvalidMessageType,
     InvalidArpaAddress,
     InvalidRule,
+    NotImpl,
     SetupBindingError,
     BuildManagerError,
     BuildConfigError,

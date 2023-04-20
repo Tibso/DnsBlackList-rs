@@ -33,7 +33,7 @@ pub fn build_resolver (
 
     // The forwarders' sockets are cloned out of the configuration variable
     // They are then made into an iterable to iterate onto
-    for socket in config.forwarders.clone().into_iter() {
+    for socket in config.forwarders.clone() {
         // Both UDP and TCP are configured for each socket
         let ns_udp = NameServerConfig::new(socket, Protocol::Udp);
         resolver_config.add_name_server(ns_udp);
@@ -56,14 +56,15 @@ pub fn build_resolver (
     resolver
 }
 
-/// Uses the resolver to retrieve the correct answers
-pub async fn get_answers (
+/// Uses the resolver to retrieve the correct records
+pub async fn get_records (
     request: &Request,
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
 )
 -> DnsBlrsResult<Vec<Record>> {
-    // Answers vector is initialized to be pushed into later
-    let mut answers: Vec<Record> =  vec![];
+    // Records vector is initialized to be pushed into later
+    let mut records: Vec<Record> =  vec![];
+
     // The domain name of the request is converted to string
     let name = request.query().name().into_name().unwrap();
 
@@ -92,33 +93,33 @@ pub async fn get_answers (
             return match resolver.reverse_lookup(ip).await {
                 Ok(ok) => {
                     for record in ok.as_lookup().records() {
-                        answers.push(record.clone())
+                        records.push(record.clone())
                     }
-                    Ok(answers)
+                    Ok(records)
                 },
                 Err(err) => {
                     match err.kind() {
                         ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..}
                             => Err(DnsBlrsError::from(DnsBlrsErrorKind::RequestRefused)),
                         ResolveErrorKind::NoRecordsFound {..}
-                            => Ok(vec![]),
+                            => Ok(records),
                         _ => Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::ResolverError(err))))
                     }
                 }
             }
         },
-        _ => return Ok(vec![])
+        _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::NotImpl))
     };
 
     // The result of the resolver queries are handled here
     match wrapped {
         // If no error occured
         Ok(ok) => {
-            // Answers the resolver received are cloned in the new answers
+            // Records the resolver received are cloned in the new records
             for record in ok.records() {
-                answers.push(record.clone())
+                records.push(record.clone())
             }
-            Ok(answers)
+            Ok(records)
         },
         // If an error occured
         Err(err) => {
@@ -130,7 +131,7 @@ pub async fn get_answers (
                     => Err(DnsBlrsError::from(DnsBlrsErrorKind::RequestRefused)),
                 // If no record was found, creates an empty answer
                 ResolveErrorKind::NoRecordsFound {..}
-                    => Ok(vec![]),
+                    => Ok(records),
                 // If another error type occured, propagate it up in the stack
                 _ => Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::ResolverError(err))))
             }
