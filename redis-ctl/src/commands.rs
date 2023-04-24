@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+/// The structure "clap" will parse
 #[derive(Parser)]
 #[command(about = "This is a command-line tool used to modify the Redis blacklist", long_about = None)]
-/// The structure "clap" will parse
 pub struct Cli {
     /// Path to dnsblrsd.conf is required
     #[arg(required = true)]
@@ -16,24 +16,29 @@ pub struct Cli {
     pub command: Commands
 }
 
+/// The commands that are available
 #[derive(Subcommand)]
-/// The subcommands enum
 pub enum Commands {
     /// Display the dnsblrsd configuration
     ShowConf {},
 
+    /// Reconfigure a parameter of the dnsblrsd configuration
+    #[command(subcommand)]
+    EditConf (Subcommands),
+
     /// Get info about a matchclass
-    Get {matchclass: String},
+    GetInfo {matchclass: String},
 
     /// Add a new rule
-    Set {
+    SetRule {
         matchclass: String,
+        // "qtype" and "ip" are "Option"s because a rule can be set without them
         qtype: Option<String>,
         ip: Option<String>
     },
 
     /// Delete a rule or a complete matchclass
-    Del {
+    DelRule {
         matchclass: String,
         qtype: Option<String>
     },
@@ -51,5 +56,24 @@ pub enum Commands {
     Stats {pattern: String},
 
     /// Clear stats about IP addresses that match a pattern
-    Clear {pattern: String},
+    ClearStats {pattern: String}
+}
+
+/// The subcommands that modify the dnsblrsd configuration
+#[derive(Subcommand)]
+pub enum Subcommands {
+    /// Add new binds
+    AddBinds {binds: Vec<String>},
+
+    /// Clear a parameter
+    ClearParam {parameter: String},
+
+    /// Overwrite the 2 forwarders
+    Forwarders {forwarders: Vec<String>},
+
+    /// Overwrite the 2 blackhole IPs"
+    BlackholeIps {blackhole_ips: Vec<String>},
+
+    /// Add new blocked IPs
+    BlockIps {blocked_ips: Vec<String>}
 }

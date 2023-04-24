@@ -1,4 +1,4 @@
-use crate::{Confile, redis_mod::{get_keys, del_vec, hset, hdel}};
+use crate::{Confile, redis_mod::{get_elements, del_vec, hset, hdel, sadd_vec, del, sadd}};
 
 use std::{
     path::PathBuf, fs::File, net::IpAddr, process::ExitCode,
@@ -13,14 +13,29 @@ pub fn show_conf (
 )
 -> RedisResult<ExitCode> {
     // Retrives the daemon's configuration as the server would when starting
-    let binds = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:binds:{}", confile.daemon_id))?;
-    let forwarders = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:forwarders:{}", confile.daemon_id))?;
-    let matchclasses = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:matchclasses:{}", confile.daemon_id))?;
-    let blackhole_ips = get_keys(&mut connection, "HKEYS", format!("dnsblrsd:blackhole_ips:{}", confile.daemon_id))?;
+    let binds = get_elements(&mut connection, "smembers", format!("dnsblrsd:binds:{}", confile.daemon_id))?;
+    match binds.is_empty() {
+        true => println!("No bind is configured"),
+        false => println!("binds {binds:#?}")
+    }
 
-    print!("{:#?}\nbinds {:#?}\nforwarders {:#?}\nmatchclasses {:#?}\nblackhole_ips {:#?}\n",
-        confile, binds, forwarders, matchclasses, blackhole_ips
-    );
+    let forwarders = get_elements(&mut connection, "smembers", format!("dnsblrsd:forwarders:{}", confile.daemon_id))?;
+    match forwarders.is_empty() {
+        true => println!("No forwarder is configured"),
+        false => println!("forwarders {forwarders:#?}")
+    }
+
+    let matchclasses = get_elements(&mut connection, "smembers", format!("dnsblrsd:matchclasses:{}", confile.daemon_id))?;
+    match matchclasses.is_empty() {
+        true => println!("No matchclass is configured"),
+        false => println!("matchclasses {matchclasses:#?}")
+    }
+
+    let blackhole_ips = get_elements(&mut connection, "smembers", format!("dnsblrsd:blackhole_ips:{}", confile.daemon_id))?;
+    match blackhole_ips.is_empty() {
+        true => println!("No blackhole IP is configured"),
+        false => println!("blackhole_ips {blackhole_ips:#?}")
+    }
 
     Ok(ExitCode::SUCCESS)
 }
@@ -33,12 +48,12 @@ pub fn clear_stats (
 )
 -> RedisResult<ExitCode> {
     // Fetches all stats that match "daemon_id" and "pattern"
-    let hashes = get_keys(&mut connection, "KEYS", format!("dnsblrsd:stats:{daemon_id}:{pattern}"))?;
+    let hashes = get_elements(&mut connection, "keys", format!("dnsblrsd:stats:{daemon_id}:{pattern}"))?;
 
     // Deletes all stats found
     let del_count = del_vec(&mut connection, hashes)?;
 
-    println!("{del_count} hashes were deleted");
+    println!("{del_count} stats were deleted");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -51,15 +66,15 @@ pub fn get_stats (
 )
 -> RedisResult<ExitCode> {
     // Fetches all stats that match "daemon_id" and "pattern"
-    let hashes = get_keys(&mut connection, "KEYS", format!("dnsblrsd:stats:{daemon_id}:{pattern}"))?;
+    let hashes = get_elements(&mut connection, "keys", format!("dnsblrsd:stats:{daemon_id}:{pattern}"))?;
 
-    // Fetches all the fields and values of each hash
+    // Fetches all the values of each hash
     for hash in hashes {
-        let keys = get_keys(&mut connection, "HGETALL", hash.clone())?;
+        let values = get_elements(&mut connection, "hgetall", hash.clone())?;
 
         let split: Vec<&str> = hash.split(':').collect();
 
-        print!("Stats for hash: \"{}\":\n{:#?}\n", split[2], keys)
+        print!("Stats for hash: \"{}\":\n{:#?}\n", split[2], values)
     }
 
     Ok(ExitCode::SUCCESS)
@@ -72,12 +87,11 @@ pub fn get_info (
 )
 -> RedisResult<ExitCode> {
     // Fetches all the fields of a matchclass
-    let fields = get_keys(&mut connection, "HGETALL", matchclass)?;
+    let fields = get_elements(&mut connection, "hgetall", matchclass)?;
 
-    if fields.is_empty() {
-        println!("The matchclass doesn't exist or doesn't have any field")
-    } else {
-        println!("{fields:#?}")
+    match fields.is_empty() {
+        true => println!("The matchclass doesn't exist or doesn't have any field"),
+        false => println!("{fields:#?}")
     }
 
     Ok(ExitCode::SUCCESS)
@@ -90,7 +104,7 @@ pub fn drop_matchclasses (
 )
 -> RedisResult<ExitCode> {
     // Fetches all matchclasses that match a pattern
-    let hashes = get_keys(&mut connection, "KEYS", pattern)?;
+    let hashes = get_elements(&mut connection, "keys", pattern)?;
 
     // Deletes all found matchclasses using a vector as input
     let del_count = del_vec(&mut connection, hashes)?;
@@ -129,26 +143,26 @@ pub fn feed_matchclass (
             };
 
             // Variable that stores whether or not the both v4 and v6 rules should be set to default
-            let mut is_both_default = true;
+            let mut are_both_default = true;
 
             // If an additionnal value was given to the command
             if let Some(ip_1) = split.next() {
                 // The default values should not be used
-                is_both_default = false;
+                are_both_default = false;
 
                 // Tries to parse it to an IP address
                 match ip_1.parse::<IpAddr>() {
                     // If the parsing was successful, value is an IP and is not the default value
-                    Ok(ok) => match ok.is_ipv4() {
+                    Ok(ip) => match ip.is_ipv4() {
                         // If the IP is v4, set the approriate rule
                         true => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "A", ip_1.to_string()) {
                             // If the command was successful, we add the number of rules set by the command to the counter
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_1}\" on line: {line_count}")
                         },
                         // If not v4 then v6
                         false => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "AAAA", ip_1.to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_1}\" on line: {line_count}")
                         }
                     },
@@ -156,12 +170,12 @@ pub fn feed_matchclass (
                     Err(_) => match ip_1 {
                         // If the value is the default for v4
                         "A" => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "A", "1".to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_1}\" on line: {line_count}")
                         },
                         // If not default v4 then v6
                         "AAAA" => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "AAAA", "1".to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_1}\" on line: {line_count}")
                         },
                         // Couldn't parse the value
@@ -172,26 +186,26 @@ pub fn feed_matchclass (
 
             // Ditto as first value, but tries to parse v6 first as user would most likely input v6 after v4
             if let Some(ip_2) = split.next() {
-                is_both_default = false;
+                are_both_default = false;
 
                 match ip_2.parse::<IpAddr>() {
-                    Ok(ok) => match ok.is_ipv6() {
+                    Ok(ip) => match ip.is_ipv6() {
                         true => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "AAAA", ip_2.to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_2}\" on line: {line_count}")
                         },
                         false => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "A", ip_2.to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_2}\" on line: {line_count}")
                         }
                     },
                     Err(_) => match ip_2 {
                         "AAAA" => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "AAAA", "1".to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_2}\" on line: {line_count}")
                         },
                         "A" => match hset(&mut connection, format!("{matchclass}:{domain_name}"), "A", "1".to_string()) {
-                            Ok(ok) => add_count += ok,
+                            Ok(_) => add_count += 1,
                             Err(_) => println!("Error feeding matchclass with: \"{ip_2}\" on line: {line_count}")
                         },
                         _ => println!("Error parsing {ip_2} item on line: {line_count}")
@@ -199,21 +213,21 @@ pub fn feed_matchclass (
                 }
             }
 
-            // If 1 default or 1 IP weren't provided, both IPs are set as default
-            if is_both_default {
+            // If at least 1 default or IP wasn't provided, both IPs are set as default
+            if are_both_default {
                 match hset(&mut connection, format!("{matchclass}:{domain_name}"), "A", "1".to_string()) {
-                    Ok(ok) => add_count += ok,
+                    Ok(_) => add_count += 1,
                     Err(_) => println!("Error feeding matchclass with default A on line: {line_count}")
                 }
                 match hset(&mut connection, format!("{matchclass}:{domain_name}"), "AAAA", "1".to_string()) {
-                    Ok(ok) => add_count += ok,
+                    Ok(_) => add_count += 1,
                     Err(_) => println!("Error feeding matchclass with default AAAA on line: {line_count}")
                 }
             }
         }
     }
 
-    println!("{add_count} lines were fed");
+    println!("{add_count} lines out of {line_count} parsed lines were fed");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -222,12 +236,11 @@ pub fn feed_matchclass (
 pub fn set_rule (
     mut connection: Connection,
     rule: String,
-    // "qtype" and "ip" are "Option"s because a rule can be set without them
     qtype: Option<String>,
     ip: Option<String>
 )
 -> RedisResult<ExitCode> {
-    let mut add_count = 0usize;
+    let mut add_count = 0u8;
 
     // Checks if "qtype" is provided, if it is, tries to parse the approriate "ip" Option
     match qtype.as_deref() {
@@ -241,42 +254,50 @@ pub fn set_rule (
                         Ok(ok) => ok,
                         Err(err) => {
                             println!("Error parsing IpAddr: {:?}", err);
-                            return Ok(ExitCode::from(65))
+                            return Ok(ExitCode::SUCCESS)
                         }
                     };
 
                     // Provided "ip" must be v4
                     if ip.is_ipv4() {
-                        add_count += hset(&mut connection, rule, "A", ip.to_string())?
+                        if hset(&mut connection, rule, "A", ip.to_string())? {
+                            add_count += 1
+                        }
                     } else {
                         println!("Provided IP was not v4")
                     }
                 },
                 // If "ip" value not provided, sets a default rule for v4
-                None => add_count += hset(&mut connection, rule, "A", "1".to_string())?
+                None => if hset(&mut connection, rule, "A", "1".to_string())? {
+                    add_count += 1
+                }
             }
         },
         // If "qtype" specifies v6
         Some("AAAA") => {
             match ip {
                 Some(_) => {
-                    let ip = match ip.unwrap().parse::<IpAddr>(){
+                    let ip = match ip.unwrap().parse::<IpAddr>() {
                         Ok(ok) => ok,
                         Err(err) => {
                             println!("Error parsing IpAddr: {:?}", err);
-                            return Ok(ExitCode::from(65))
+                            return Ok(ExitCode::SUCCESS)
                         }
                     };
 
                     // Provided "ip" must be v6
                     if ip.is_ipv6() {
-                        add_count += hset(&mut connection, rule, "AAAA", ip.to_string())?
+                        if hset(&mut connection, rule, "AAAA", ip.to_string())? {
+                            add_count += 1
+                        }
                     } else {
                         println!("Provided IP was not v6")
                     }
                 },
                 // If "ip" value not provided, sets a default rule for v6
-                None => add_count += hset(&mut connection, rule, "AAAA", "1".to_string())?
+                None => if hset(&mut connection, rule, "AAAA", "1".to_string())? {
+                    add_count += 1
+                }
             }
         },
         // Provided "qtype" was not "A" or "AAAA" so it is incorrect
@@ -285,12 +306,21 @@ pub fn set_rule (
         None => {
             println!("Record type not provided, adding default rule for both v4 and v6");
 
-            add_count += hset(&mut connection, rule.clone(), "A", "1".to_string())?;
-            add_count += hset(&mut connection, rule, "AAAA", "1".to_string())?
+            if hset(&mut connection, rule.clone(), "A", "1".to_string())? {
+                add_count += 1
+            }
+            if hset(&mut connection, rule, "AAAA", "1".to_string())? {
+                add_count += 1
+            }
         }
     }
 
-    println!("{add_count} rules were added");
+    match add_count {
+        2 => println!("Both rules were successfully added"),
+        1 => println!("1 rule was successfully added"),
+        0 => println!("The rule(s) already exist"),
+        _ => unreachable!()
+    }
 
     Ok(ExitCode::SUCCESS)
 }
@@ -302,25 +332,126 @@ pub fn delete_rule (
     qtype: Option<String>
 )
 -> RedisResult<ExitCode> {
-    let mut del_count = 0usize;
+    let mut result = false;
 
     // Checks if "qtype" is provided, if it is, tries to delete the approriate rule
     match qtype.as_deref() {
         // If "qtype" specifies v4
-        Some("A") => del_count += hdel(&mut connection, rule, "A")?,
-            // If "qtype" specifies v6
-        Some("AAAA") => del_count += hdel(&mut connection, rule, "AAAA")?,
+        Some("A") => result = hdel(&mut connection, rule, "A")?,
+        // If "qtype" specifies v6
+        Some("AAAA") => result = hdel(&mut connection, rule, "AAAA")?,
         Some(_) => println!("Invalid record type provided"),
         // "qtype" was not provided, the rule for both types are deleted
         _ => {
             println!("Record type not provided, deleting rule for both v4 and v6");
 
-            del_count += hdel(&mut connection, rule.clone(), "A")?;
-            del_count += hdel(&mut connection, rule, "AAAA")?
+            result = del(&mut connection, rule)?
         }
     }
 
-    println!("{del_count} rules were deleted");
+    match result {
+        true => println!("The rule was successfully deleted"),
+        false => println!("The rule does not exist")
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Adds binds to the dnsblrsd's configuration
+pub fn add_binds (
+    mut connection: Connection,
+    daemon_id: String,
+    binds: Vec<String>
+)
+-> RedisResult<ExitCode> {
+    let add_count = sadd_vec(&mut connection, format!("dnsblrsd:binds:{daemon_id}"), binds)?;
+
+    println!("{add_count} binds were added to the configuration");
+
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Clear a parameter from the dnsblrsd's configuration
+pub fn clear_parameter (
+    mut connection: Connection,
+    daemon_id: String,
+    parameter: String
+)
+-> RedisResult<ExitCode> {
+    let del_count = del(&mut connection, format!("dnsblrsd:{parameter}:{daemon_id}"))?;
+
+    match del_count {
+        true => println!("The parameter was successfully deleted"),
+        false => println!("The parameter does not exist")
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Reconfigures the forwarders of the dnsblrsd's configuration
+pub fn set_forwarders (
+    mut connection: Connection,
+    daemon_id: String,
+    forwarders: Vec<String>
+)
+-> RedisResult<ExitCode> {
+    if forwarders.len() == 2 {
+        del(&mut connection, format!("dnsblrsd:forwarders:{daemon_id}"))?;
+
+        let add_count = sadd_vec(&mut connection, format!("dnsblrsd:forwarders:{daemon_id}"), forwarders)?;
+    
+        println!("{add_count} forwarders were added to the configuration")
+    } else {
+        println!("2 forwarders must be provided")
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Reconfigures the "blackhole_ips" of the dnsblrsd's configuration
+pub fn set_blackhole_ips (
+    mut connection: Connection,
+    daemon_id: String,
+    blackhole_ips: Vec<String>
+)
+-> RedisResult<ExitCode> {
+    if blackhole_ips.len() == 2 {
+        del(&mut connection, format!("dnsblrsd:blackhole_ips:{daemon_id}"))?;
+
+        let add_count = sadd_vec(&mut connection, format!("dnsblrsd:blackhole_ips:{daemon_id}"), blackhole_ips)?;
+
+        println!("{add_count} blackhole_ips were added to the configuration");
+    } else {
+        println!("2 blackhole_ips must be provided")
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Adds blocked IPs to the dnsblrsd's configuration
+pub fn add_blocked_ips (
+    mut connection: Connection,
+    daemon_id: String,
+    to_blocked_ips: Vec<String>
+)
+-> RedisResult<ExitCode> {
+    let mut add_count = 0usize;
+
+    for to_blocked_ip in to_blocked_ips {
+        if let Ok(ip) = to_blocked_ip.parse::<IpAddr>() {
+            if ip.is_ipv4() {
+                if sadd(&mut connection, format!("dnsblrsd:blocked_ips_v4:{daemon_id}"), ip.to_string())? {
+                    add_count += 1
+                }
+            } else if sadd(&mut connection, format!("dnsblrsd:blocked_ips_v6:{daemon_id}"), ip.to_string())? {
+                add_count += 1
+            }
+        } else {
+            println!("Error parsing IP: \"{to_blocked_ip}\"")
+        }
+    }
+
+    println!("{add_count} IPs were added to the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
 }

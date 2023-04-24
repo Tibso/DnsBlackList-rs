@@ -35,7 +35,7 @@ This DNS server **filters queries** using a **blacklist** from a Redis database.
 
 Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution would allow.
 
-Based on its **request type** and **record type**, the request will either be **dropped**, **forwarded** to retrieve a **real answer** or **filtered** using its requested **domain name** and the retrieved **answer**.
+Based on its **request type** and **query type**, the request will either be **dropped**, **forwarded** to retrieve a **real answer** or **filtered** using its requested **domain name** and the retrieved **answer**.
 
 When **filtered**, the requested **domain** name is **matched against** the Redis **blacklist** using the domain name subdomains which are optimally ordered to speed up the matching process.
 
@@ -47,7 +47,7 @@ Finally, the **response** is **sent** to the client.
 
 If **any error occurs** during the handling of a request, the worker **forwards** the **approriate error** to the client.
 
-## **Supported Record Types**
+## **Supported Query Types**
 
 | Unfiltered | Filtered |
 |-----------:|----------|

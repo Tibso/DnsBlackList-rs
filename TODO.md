@@ -6,12 +6,12 @@
 - limits
 
 ## dnslrd
+- clean code
 
 - matchclass counter
 - find optimum number of threads to ease IO bottleneck
 - add windows signal and build option
 
 ## redis-ctl
-- modify daemon's configuration with new commands
 
 - add clarity to optional values?

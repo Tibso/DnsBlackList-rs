@@ -1,19 +1,16 @@
-// This flag ensures any unsafe code will induce a compiler error 
-#![forbid(unsafe_code)]
-
 mod commands;
 mod functions;
 mod redis_mod;
 
-use crate::commands::{Cli, Commands};
+use crate::commands::{Cli, Commands, Subcommands};
 
 use std::{fs, process::ExitCode};
 use clap::Parser;
 use redis::Client;
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
 /// The configuration file structure
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Confile {
     daemon_id: String,
     redis_address: String
@@ -72,7 +69,30 @@ fn main() -> ExitCode {
             => functions::show_conf(
                 connection, confile
             ),
-        Commands::Clear {pattern}
+        Commands::EditConf (subcommand)
+            => match subcommand {
+                Subcommands::AddBinds {binds}
+                    => functions::add_binds(
+                        connection, confile.daemon_id, binds.to_owned()
+                    ),
+                Subcommands::ClearParam {parameter}
+                    => functions::clear_parameter(
+                        connection, confile.daemon_id, parameter.to_owned()
+                    ),
+                Subcommands::Forwarders {forwarders}
+                    => functions::set_forwarders(
+                        connection, confile.daemon_id, forwarders.to_owned()
+                    ),
+                Subcommands::BlackholeIps {blackhole_ips}
+                    => functions::set_blackhole_ips(
+                        connection, confile.daemon_id, blackhole_ips.to_owned()
+                    ),
+                Subcommands::BlockIps {blocked_ips}
+                    => functions::add_blocked_ips(
+                        connection, confile.daemon_id, blocked_ips.to_owned()
+                    )
+            },
+        Commands::ClearStats {pattern}
             => functions::clear_stats(
                 connection, confile.daemon_id, pattern.to_owned()
             ),
@@ -80,7 +100,7 @@ fn main() -> ExitCode {
             => functions::get_stats(
                 connection, confile.daemon_id, pattern.to_owned()
             ),
-        Commands::Get {matchclass}
+        Commands::GetInfo {matchclass}
             => functions::get_info(
                 connection, matchclass.to_owned()
             ),
@@ -92,11 +112,11 @@ fn main() -> ExitCode {
             => functions::feed_matchclass(
                 connection, path_to_list.to_owned(), matchclass.to_owned()
             ),
-        Commands::Set {matchclass, qtype, ip}
+        Commands::SetRule {matchclass, qtype, ip}
             => functions::set_rule(
                 connection, matchclass.to_owned(), qtype.to_owned(), ip.to_owned()
             ),
-        Commands::Del {matchclass, qtype}
+        Commands::DelRule {matchclass, qtype}
             => functions::delete_rule(
                 connection, matchclass.to_owned(), qtype.to_owned()
             )

@@ -1,74 +1,130 @@
-use redis::{Cmd, FromRedisValue, ConnectionLike, Connection, RedisResult};
+use redis::{Cmd, from_redis_value, ConnectionLike, Connection, RedisResult};
 
 /// Sets a value of a field in a hash in Redis
+/// 
+/// Returns "true" if the field was successfully added
 pub fn hset (
     connection: &mut Connection,
     hash: String,
-    field: &str,
+    key: &str,
     value: String
 )
--> RedisResult<usize> {
-    // This Redis command sets a value of a field in a hash if it does not already exist
+-> RedisResult<bool> {
     // The command returns the number of values added in a serialized "Value"
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg("HSET")
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("hset")
         .arg(hash)
-        .arg(field)
-        .arg(value)
-    )?;
-    // Deserializes "Value"
-    let add_count = FromRedisValue::from_redis_value(&ser_answer)?;
+        .arg(key)
+        .arg(value))?;
+    // Deserializes Redis "Value"
+    let result = from_redis_value(&ser_value)?;
 
-    // Returns 1 if the field was successfully added
-    Ok(add_count)
+    Ok(result)
 }
 
-/// Deletes hashes from Redis
+/// Deletes a key from Redis
+/// 
+/// Returns "true" if the key was successfully deleted
+pub fn del (
+    connection: &mut Connection,
+    key: String
+)
+-> RedisResult<bool> {
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("del")
+        .arg(key))?;
+    let result = from_redis_value(&ser_value)?;
+
+    Ok(result)
+}
+
+/// Deletes keys from Redis using a vector of keys as input
+/// 
+/// Returns the number of keys that were deleted
 pub fn del_vec (
     connection: &mut Connection,
-    hashes: Vec<String>
+    keys: Vec<String>
 )
 -> RedisResult<usize> {
-    // This Redis command deletes hashes if they exists
-    // The command takes a vector as input
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg("DEL")
-        .arg(hashes))?;
-    let del_count = FromRedisValue::from_redis_value(&ser_answer)?;
+    // Some commands can take a vector as input
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("del")
+        .arg(keys))?;
+    let del_count = from_redis_value(&ser_value)?;
 
-    // Returns the amount of hashes deleted
     Ok(del_count)
 }
 
 /// Deletes the field of a hash from Redis
+/// 
+/// Returns "true" if the field was successfully deleted
 pub fn hdel (
     connection: &mut Connection,
     hash: String,
     field: &str
 )
--> RedisResult<usize> {
-    let ser_answer = connection.req_command(Cmd::new()
-        .arg("HDEl")
+-> RedisResult<bool> {
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("hdel")
         .arg(hash)
         .arg(field))?;
-    let del_count = FromRedisValue::from_redis_value(&ser_answer)?;
+    let result = from_redis_value(&ser_value)?;
 
-    // Returns 1 if the field was successfully deleted
-    Ok(del_count)
+    Ok(result)
 }
 
-/// Fetches all the keys of a hash from Redis
-pub fn get_keys (
+/// Fetches all the elements of a key from Redis
+/// 
+/// This functions encompasses the commands "keys", "hgetall" and "smembers"
+/// as this function works for regular keys, hashes and sets
+/// 
+/// Returns a vector of the elements
+pub fn get_elements (
     connection: &mut Connection,
     command: &str,
-    hash: String
+    key: String
 )
 -> RedisResult<Vec<String>> {
-    let ser_answer = connection.req_command(Cmd::new()
+    let ser_value = connection.req_command(Cmd::new()
         .arg(command)
-        .arg(hash))?;
-    let deser_answer = FromRedisValue::from_redis_value(&ser_answer)?;
+        .arg(key))?;
+    let deser_value = from_redis_value(&ser_value)?;
 
-    // Returns a vector of strings
-    Ok(deser_answer)
+    Ok(deser_value)
+}
+
+/// Adds a vector of members to a set in Redis
+/// 
+/// Returns the number of members that were added to the set
+pub fn sadd_vec (
+    connection: &mut Connection,
+    set: String,
+    members: Vec<String>
+)
+-> RedisResult<usize> {
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("sadd")
+        .arg(set)
+        .arg(members))?;
+    let add_count = from_redis_value(&ser_value)?;
+
+    Ok(add_count)
+}
+
+/// Adds a member to a set in Redis
+/// 
+/// Returns "true" if the member was successfully added to the set
+pub fn sadd (
+    connection: &mut Connection,
+    set: String,
+    member: String
+)
+-> RedisResult<bool> {
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("sadd")
+        .arg(set)
+        .arg(member))?;
+    let result = from_redis_value(&ser_value)?;
+
+    Ok(result)
 }
