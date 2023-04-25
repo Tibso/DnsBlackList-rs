@@ -71,7 +71,7 @@ pub enum Subcommands {
     /// Overwrite the 2 forwarders
     Forwarders {forwarders: Vec<String>},
 
-    /// Overwrite the 2 blackhole IPs"
+    /// Overwrite the 2 blackhole IPs
     BlackholeIps {blackhole_ips: Vec<String>},
 
     /// Add new blocked IPs

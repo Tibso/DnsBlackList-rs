@@ -13,6 +13,8 @@ pub fn show_conf (
 )
 -> RedisResult<ExitCode> {
     // Retrives the daemon's configuration as the server would when starting
+    println!("{confile:#?}");
+
     let binds = get_elements(&mut connection, "smembers", format!("dnsblrsd:binds:{}", confile.daemon_id))?;
     match binds.is_empty() {
         true => println!("No bind is configured"),
@@ -90,7 +92,10 @@ pub fn get_info (
     let fields = get_elements(&mut connection, "hgetall", matchclass)?;
 
     match fields.is_empty() {
-        true => println!("The matchclass doesn't exist or doesn't have any field"),
+        true => {
+            println!("The matchclass doesn't exist or doesn't have any field");
+            return Ok(ExitCode::from(1))
+        },
         false => println!("{fields:#?}")
     }
 
@@ -254,7 +259,8 @@ pub fn set_rule (
                         Ok(ok) => ok,
                         Err(err) => {
                             println!("Error parsing IpAddr: {:?}", err);
-                            return Ok(ExitCode::SUCCESS)
+                            // ExitCode "2" is used to indicate syntax issue
+                            return Ok(ExitCode::from(2))
                         }
                     };
 
@@ -281,7 +287,7 @@ pub fn set_rule (
                         Ok(ok) => ok,
                         Err(err) => {
                             println!("Error parsing IpAddr: {:?}", err);
-                            return Ok(ExitCode::SUCCESS)
+                            return Ok(ExitCode::from(2))
                         }
                     };
 
@@ -318,7 +324,11 @@ pub fn set_rule (
     match add_count {
         2 => println!("Both rules were successfully added"),
         1 => println!("1 rule was successfully added"),
-        0 => println!("The rule(s) already exist"),
+        0 => {
+            println!("The rule(s) already exist");
+            // ExitCode "1" is used to indicate a general error
+            return Ok(ExitCode::from(1))
+        },
         _ => unreachable!()
     }
 
@@ -351,7 +361,10 @@ pub fn delete_rule (
 
     match result {
         true => println!("The rule was successfully deleted"),
-        false => println!("The rule does not exist")
+        false => {
+            println!("The rule does not exist");
+            return Ok(ExitCode::from(1))
+        }
     }
 
     Ok(ExitCode::SUCCESS)
@@ -364,6 +377,11 @@ pub fn add_binds (
     binds: Vec<String>
 )
 -> RedisResult<ExitCode> {
+    if binds.is_empty() {
+        println!("No binds was provided");
+        return Ok(ExitCode::from(2))
+    }
+
     let add_count = sadd_vec(&mut connection, format!("dnsblrsd:binds:{daemon_id}"), binds)?;
 
     println!("{add_count} binds were added to the configuration");
@@ -382,7 +400,10 @@ pub fn clear_parameter (
 
     match del_count {
         true => println!("The parameter was successfully deleted"),
-        false => println!("The parameter does not exist")
+        false => {
+            println!("The parameter does not exist");
+            return Ok(ExitCode::from(1))
+        }
     }
 
     Ok(ExitCode::SUCCESS)
@@ -395,6 +416,7 @@ pub fn set_forwarders (
     forwarders: Vec<String>
 )
 -> RedisResult<ExitCode> {
+    // Only 2 forwarders can be set
     if forwarders.len() == 2 {
         del(&mut connection, format!("dnsblrsd:forwarders:{daemon_id}"))?;
 
@@ -402,7 +424,8 @@ pub fn set_forwarders (
     
         println!("{add_count} forwarders were added to the configuration")
     } else {
-        println!("2 forwarders must be provided")
+        println!("2 forwarders must be provided");
+        return Ok(ExitCode::from(2))
     }
 
     Ok(ExitCode::SUCCESS)
@@ -415,6 +438,7 @@ pub fn set_blackhole_ips (
     blackhole_ips: Vec<String>
 )
 -> RedisResult<ExitCode> {
+    // Only 2 blackhole_ips can be set
     if blackhole_ips.len() == 2 {
         del(&mut connection, format!("dnsblrsd:blackhole_ips:{daemon_id}"))?;
 
@@ -422,7 +446,8 @@ pub fn set_blackhole_ips (
 
         println!("{add_count} blackhole_ips were added to the configuration");
     } else {
-        println!("2 blackhole_ips must be provided")
+        println!("2 blackhole_ips must be provided");
+        return Ok(ExitCode::from(2))
     }
 
     Ok(ExitCode::SUCCESS)
@@ -435,6 +460,11 @@ pub fn add_blocked_ips (
     to_blocked_ips: Vec<String>
 )
 -> RedisResult<ExitCode> {
+    if to_blocked_ips.is_empty() {
+        println!("No IP was provided");
+        return Ok(ExitCode::from(2))
+    }
+
     let mut add_count = 0usize;
 
     for to_blocked_ip in to_blocked_ips {
@@ -447,7 +477,8 @@ pub fn add_blocked_ips (
                 add_count += 1
             }
         } else {
-            println!("Error parsing IP: \"{to_blocked_ip}\"")
+            println!("Error parsing IP: \"{to_blocked_ip}\"");
+            return Ok(ExitCode::from(2))
         }
     }
 

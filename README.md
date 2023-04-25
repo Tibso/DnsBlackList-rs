@@ -8,7 +8,7 @@ This DNS server **filters queries** using a **blacklist** from a Redis database.
 
 # **Repository composition**
 
-| Folder | Description |
+| Directory | Description |
 |--------|-------------|
 | *dnsblrsd* | Contains the server's daemon source code and its configuration |
 | *redis-ctl* | Contains the source code of the tool used to modify the blacklist stored in the Redis database |
@@ -176,21 +176,22 @@ Lastly, the `systemctl` **command** is used to **configure** the **service**:
 
 # **Redis-ctl**
 
-This is a command-line tool used to modify the blacklist stored in the Redis database.
+This is a command-line tool used to modify the Redis blacklist.
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> <COMMAND>
 
 Commands:
-  conf   Display the dnslrd configuration
-  get    Get info about a matchclass
-  set    Add a new rule
-  del    Delete a rule or a complete matchclass
-  drop   Drop all matchclasses that match a pattern
-  feed   Feed a list of domains to a matchclass
-  stats  Display stats about IP addresses that match a pattern
-  clear  Clear stats about IP addresses that match a pattern
-  help   Print this message or the help of the given subcommand(s)
+  show-conf    Display the dnsblrsd configuration
+  edit-conf    Reconfigure a parameter of the dnsblrsd configuration
+  get-info     Get info about a matchclass
+  set-rule     Add a new rule
+  del-rule     Delete a rule or a complete matchclass
+  drop         Drop all matchclasses that match a pattern
+  feed         Feed a list of domains to a matchclass
+  stats        Display stats about IP addresses that match a pattern
+  clear-stats  Clear stats about IP addresses that match a pattern
+  help         Print this message or the help of the given subcommand(s)
 
 Arguments:
   <PATH_TO_CONFILE>  Path to dnsblrsd.conf is required
@@ -199,7 +200,7 @@ Options:
   -h, --help  Print help
 ```
 
-## **conf**
+## **show-conf**
 
 ``` 
 Usage: redis-ctl <PATH_TO_CONFILE> showconf
@@ -209,45 +210,45 @@ Usage: redis-ctl <PATH_TO_CONFILE> showconf
 
 This command fetches the configuration that the daemon uses.
 
-## **get**
+## **get-info**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> get <MATCHCLASS>
+Usage: redis-ctl <PATH_TO_CONFILE> get-info <MATCHCLASS>
 ```
 
 **Retrieves** all the **information** of a **matchclass**.
 
-## **set**
+## **set-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> set <MATCHCLASS> [QTYPE [IP]]
+Usage: redis-ctl <PATH_TO_CONFILE> set-rule <MATCHCLASS> [QTYPE] [IP]
 ```
 
 **Adds** a new **rule** to the **blacklist**.
 
 + Example 1: add rule with default ipv6
 
-  `[..] set malware#BLAZIT420:not.honey.pot.net. AAAA`
+  `[..] set-rule malware#BLAZIT420:not.honey.pot.net. AAAA`
 
 + Example 2: add rule with custom ipv4
 
-  `[..] set adult#PEG69:daddyissues.com. A 127.0.0.1`
+  `[..] set-rule adult#PEG69:daddyissues.com. A 127.0.0.1`
 
-## **del**
+## **del-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> del <MATCHCLASS> [QTYPE]
+Usage: redis-ctl <PATH_TO_CONFILE> del-rule <MATCHCLASS> [QTYPE]
 ```
 
 **Deletes** a **matchclass or** one of its two **rules**.
 
-+ Example 1: delete the complete matchclass
++ Example 1: delete the complete matchclass (both v4 and v6 rules)
 
-  `[..] del malware#ICU2:surely.notpwned.net.`
+  `[..] del-rule malware#ICU2:surely.notpwned.net.`
 
 + Example 2: delete ipv6 rule of matchclass
 
-  `[..] del malware#ICU2:surely.notpwned.net. AAAA`
+  `[..] del-rule malware#ICU2:surely.notpwned.net. AAAA`
 
 ## **drop**
 
@@ -301,7 +302,8 @@ Redis' **wildcards** (*?) can be used on the pattern.
 
   `[..] stats 123.?.??.*`
 
-## **Clear**
+## **clear**
+
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> clear <PATTERN>
 ```
@@ -313,3 +315,90 @@ Redis' **wildcards** (*?) can be used on the pattern.
 + Example:
 
   `[..] clear 123.?.??.*`
+
+## **edit-conf**
+
+Reconfigure a parameter of the dnsblrsd configuration via subcommands.
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf <COMMAND>
+
+Commands:
+  add-binds      Add new binds
+  clear-param    Clear a parameter
+  forwarders     Overwrite the 2 forwarders
+  blackhole-ips  Overwrite the 2 blackhole IPs
+  block-ips      Add new blocked IPs
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+### **add-binds**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-binds <BIND1> [BIND2 BIND3 ...]
+```
+
+**Adds binds** to the dnsblrsd **configuration**.
+
++ Example:
+
+  `[...] edit-conf add-binds UDP=127.0.0.1:53 TCP=::1:53`
+
+### **clear-param**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf clear-param <PARAMETER> 
+```
+
+**Clears** a **parameter** of the dnsblrsd **configuration**.
+
+Possible **values** of *PARAMETER* **are**:
+
+***binds***, ***forwarders***, ***matchclasses***, ***blackhole_ips***, ***blocked_ips_v4***, ***blocked_ips_v6***
+
++ Example:
+
+  `[...] edit-conf clear-param binds`
+
+### **forwarders**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf forwarders <FORWARDER1> <FORWARDER2>
+```
+
+**Overwrites** the **forwarders** of the dnsblrsd **configuration**.
+
+There can **only** be **2** forwarders.
+
++ Example:
+
+  `[...] edit-conf forwarders 123.456.789.2:53 123.456.789.3:53`
+
+### **blackhole-ips**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blackhole-ips <IPV4> <IPV6>
+```
+
+**Overwrites** the "**blackhole_ips**" of the dnsblrsd **configuration**.
+
+There can **only** be **2** "blackhole_ips" and there must be a v4 and a v6.
+
++ Example:
+
+  `[...] edit-conf blackhole-ips 127.0.0.1 ::1`
+
+### **block-ips**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf block-ips <IP1> [IP2 IP3 ...]
+```
+
+**Adds IPs** to **block** to the dnsblrsd **configuration**.
+
++ Example:
+
+  `[...] edit-conf block-ips 123.456.789.42 123.456.789.69`
