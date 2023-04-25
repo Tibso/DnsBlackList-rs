@@ -90,7 +90,7 @@ The **DNS servers** that will **handle** the **forwarded requests**.
 
 ### **Blackhole IPs**
 
-The **default IPs** that will be **answered** to **blocked requests**. These IPs are used unless the matched rule has a specific IP configured as answer.
+The **default IPs** that will be **answered** to **blocked requests**. These IPs are used unless the matched rule has a specific IP configured as answer. The order does not matter.
 
 [SET] dnsblrsd:blackhole_ips:*[DAEMON_ID]*
 
@@ -385,7 +385,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blackhole-ips <IPV4> <IPV6>
 
 **Overwrites** the "**blackhole_ips**" of the dnsblrsd **configuration**.
 
-There can **only** be **2** "blackhole_ips" and there must be a v4 and a v6.
+There can **only** be **2** "blackhole_ips" and there must be a v4 and a v6. The order does not matter.
 
 + Example:
 

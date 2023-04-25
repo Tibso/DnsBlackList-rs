@@ -23,7 +23,7 @@ use arc_swap::ArcSwap;
 use std::{
     time::Duration, fs, sync::Arc, 
     process::{ExitCode, exit},
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr}
+    net::{IpAddr, SocketAddr}
 };
 use tracing::{info, error, warn};
 use signal_hook_tokio::Signals;
@@ -65,7 +65,7 @@ fn read_confile (
         }
     };
 
-    info!("Daemon_id is \"{}\"", confile.daemon_id);
+    info!("daemon_id is \"{}\"", confile.daemon_id);
     info!("{}: Redis server: {}", confile.daemon_id, confile.redis_address);
     
     confile
@@ -79,57 +79,61 @@ async fn build_config (
     // Initialize the configuration variable with the default values using the Default trait
     let mut config = Config::default();
 
-    // Attempts to fetch the blackhole_ips from Redis
+    // The configuration is retrieved from Redis
     // If an error occurs, the server will not filter
+    // Attempts to fetch the blackhole_ips from Redis
     match smembers(redis_manager, format!("dnsblrsd:blackhole_ips:{}", CONFILE.daemon_id)).await {
         // Could not retrieve blackhole_ips
         Err(err) => warn!("{}: Error retrieving retrieve blackhole_ips: {:?}", CONFILE.daemon_id, err),
         // Blackhole_ips were succesfully retrieved
         Ok(tmp_blackhole_ips) => {
-            let blackhole_ips_count = tmp_blackhole_ips.len();
             // If we haven't received exactly 2 blackhole_ips, there is an issue with the configuration 
-            if blackhole_ips_count != 2 {
+            if tmp_blackhole_ips.len() != 2 {
                 warn!("{}: Amount of blackhole_ips received were not 2 (must have v4 and v6)", CONFILE.daemon_id);
             } else {
                 // Vector is made into an iterable to parse both IPs
                 let mut tmp_blackhole_ips = tmp_blackhole_ips.iter();
 
-                // Tries to parse for IPv4
-                match tmp_blackhole_ips.next().unwrap().parse::<Ipv4Addr>() {
-                    // Error occured when parsing IPv4
-                    Err(err) => warn!("{}: Error parsing blackhole ipv4: {:?}", CONFILE.daemon_id, err),
-                    // IPv4 was succesfully parsed
-                    Ok(ipv4) => {
-                        // Tries to parse for IPv6
-                        match tmp_blackhole_ips.next().unwrap().parse::<Ipv6Addr>() {
-                            // Error occured when parsing IPv6
-                            Err(err) => warn!("{}: Error parsing blackhole ipv6: {:?}", CONFILE.daemon_id, err),
-                            // IPv6 was succesfully parsed
-                            Ok(ipv6) => {
-                                // Both blackhole_ips are parsed into IPs
-                                info!("{}: Blackhole_ips received are valid", CONFILE.daemon_id);
+                // Tries to parse first IP
+                match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
+                    // Error occured when parsing first IP
+                    Err(err) => warn!("{}: Error parsing first blackhole IP: {:?}", CONFILE.daemon_id, err),
+                    // First IP was successfully parsed
+                    Ok(ip1) => {
+                        // Tries to parse for second IP
+                        match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
+                            Err(err) => warn!("{}: Error parsing second blackhole IP: {:?}", CONFILE.daemon_id, err),
+                            Ok(ip2) => {
+                                // There must be one IPv4 and one IPv6
+                                match (ip1, ip2) {
+                                    | (IpAddr::V4(ipv4), IpAddr::V6(ipv6))
+                                    | (IpAddr::V6(ipv6), IpAddr::V4(ipv4))
+                                    => {
+                                        // Both blackhole_ips are parsed into IPs
+                                        info!("{}: Blackhole_ips received are valid", CONFILE.daemon_id);
 
-                                // Fetches the matchclasses from Redis
-                                match smembers(redis_manager, format!("dnsblrsd:matchclasses:{}", CONFILE.daemon_id)).await {
-                                    // Could not retrive matchclasses
-                                    Err(err) => warn!("{}: Error retrieving matchclasses: {:?}", CONFILE.daemon_id, err),
-                                    // Mathclasses were succesfully retrieved
-                                    Ok(tmp_matchclasses) => {
-                                        let matchclasses_count = tmp_matchclasses.len();
-                                        // If no matchclass is received, the server will not filter
-                                        if matchclasses_count == 0 {
-                                            warn!("{}: No matchclass received", CONFILE.daemon_id);
-                                        } else {
-                                            // They are stored in the configuration variable
-                                            config.blackhole_ips = Some((ipv4, ipv6));
-                                            // If at least 1 matchclass is received, the server will filter the requests
-                                            config.is_filtering = true;
-                                            // The variable is store in the configuration variable
-                                            config.matchclasses = Some(tmp_matchclasses);
-    
-                                            info!("{}: Received {} matchclasses", CONFILE.daemon_id, matchclasses_count)
+                                        // Fetches the matchclasses from Redis
+                                        match smembers(redis_manager, format!("dnsblrsd:matchclasses:{}", CONFILE.daemon_id)).await {
+                                            Err(err) => warn!("{}: Error retrieving matchclasses: {:?}", CONFILE.daemon_id, err),
+                                            Ok(tmp_matchclasses) => {
+                                                let matchclasses_count = tmp_matchclasses.len();
+                                                // If no matchclass is received, the server will not filter
+                                                if matchclasses_count == 0 {
+                                                    warn!("{}: No matchclass received", CONFILE.daemon_id);
+                                                } else {
+                                                    // They are stored in the configuration variable
+                                                    config.blackhole_ips = Some((ipv4, ipv6));
+                                                    // If at least 1 matchclass is received, the server will filter the requests
+                                                    config.is_filtering = true;
+                                                    // The variable is store in the configuration variable
+                                                    config.matchclasses = Some(tmp_matchclasses);
+
+                                                    info!("{}: Received {} matchclasses", CONFILE.daemon_id, matchclasses_count)
+                                                }
+                                            }
                                         }
-                                    }
+                                    },
+                                    _ => warn!("The \"blackhole_ips\" are not properly configured, there must be one IPv4 and one IPv6"),
                                 }
                             }
                         }
@@ -177,13 +181,13 @@ async fn build_config (
                 valid_forwarder_count += 1
             }
             // If at least 1 forwarder socket is valid, the server can start
-            if valid_forwarder_count == forwarders_count {
-                info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
-            } else if valid_forwarder_count == 0 {
-                error!("{}: No forwarder is valid", CONFILE.daemon_id);
-                return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
-            } else if valid_forwarder_count < forwarders_count {
-                warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
+            match valid_forwarder_count {
+                _ if valid_forwarder_count == forwarders_count => info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count),
+                0 => {
+                    error!("{}: No forwarder is valid", CONFILE.daemon_id);
+                    return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
+                },
+                _ => warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
             }
         }
     }
@@ -264,14 +268,14 @@ async fn setup_binds (
         };
         successful_binds_count += 1
     }
-    if successful_binds_count == bind_count {
-        info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count)
-    } else if successful_binds_count == 0 {
-        // If no binds were set, returns an error
-        error!("{}: No bind was set", CONFILE.daemon_id);
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
-    } else if successful_binds_count < bind_count {
-        warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
+    match successful_binds_count {
+        _ if successful_binds_count == bind_count => info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count),
+        0 => {
+            // If no binds were set, returns an error
+            error!("{}: No bind was set", CONFILE.daemon_id);
+            return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
+        },
+        _ => warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
     }
 
     Ok(())
@@ -364,8 +368,8 @@ async fn main()
     // Builds the server's configuration
     let config = match build_config(&mut redis_manager).await {
         Ok(ok) => ok,
-        Err(_) => {
-            error!("{}: An error occured while building server configuration", CONFILE.daemon_id);
+        Err(err) => {
+            error!("{}: An error occured while building server configuration: {:?}", CONFILE.daemon_id, err);
             // Returns with CONFIG exitcode on error
             return ExitCode::from(78)
         }

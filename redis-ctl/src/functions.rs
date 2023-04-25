@@ -468,7 +468,9 @@ pub fn add_blocked_ips (
     let mut add_count = 0usize;
 
     for to_blocked_ip in to_blocked_ips {
+        // Each provided IP is parsed
         if let Ok(ip) = to_blocked_ip.parse::<IpAddr>() {
+            // Each IP is stored in its respective blocklist
             if ip.is_ipv4() {
                 if sadd(&mut connection, format!("dnsblrsd:blocked_ips_v4:{daemon_id}"), ip.to_string())? {
                     add_count += 1
