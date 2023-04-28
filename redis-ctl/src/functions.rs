@@ -122,12 +122,16 @@ pub fn drop_matchclasses (
 /// Feeds a list of domain to a matchclass
 pub fn feed_matchclass (
     mut connection: Connection,
+    daemon_id: String,
     path_to_list: PathBuf,
     matchclass: String
 )
 -> RedisResult<ExitCode> {
     // Attempts to open the file
     let file = File::open(path_to_list)?;
+
+    // Adds the matchclass to the set of matchclass
+    sadd(&mut connection, format!("dnsblrsd:matchclasses:{}", daemon_id), matchclass.clone())?;
 
     let mut add_count = 0usize;
     let mut line_count = 0usize;
@@ -140,7 +144,7 @@ pub fn feed_matchclass (
         // If the line was read succesfully
         if let Ok(line) = line {
             // The line is made iterable using the space as split character
-            let mut split = line.split(' ');
+            let mut split = line.split_ascii_whitespace();
 
             // First split should be the "domain_name"
             let Some(domain_name) = split.next() else {
@@ -240,12 +244,18 @@ pub fn feed_matchclass (
 /// Adds a new rule
 pub fn set_rule (
     mut connection: Connection,
+    daemon_id: String,
     rule: String,
     qtype: Option<String>,
     ip: Option<String>
 )
 -> RedisResult<ExitCode> {
     let mut add_count = 0u8;
+
+    // Takes matchclass from the rule
+    let matchclass = rule.clone().split(':').next().unwrap().to_owned();
+    // Adds the matchclass to the set of matchclass
+    sadd(&mut connection, format!("dnsblrsd:matchclasses:{}", daemon_id), matchclass)?;
 
     // Checks if "qtype" is provided, if it is, tries to parse the approriate "ip" Option
     match qtype.as_deref() {

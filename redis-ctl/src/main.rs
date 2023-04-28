@@ -96,7 +96,7 @@ fn main() -> ExitCode {
             => functions::clear_stats(
                 connection, confile.daemon_id, pattern.to_owned()
             ),
-        Commands::Stats {pattern}
+        Commands::ShowStats {pattern}
             => functions::get_stats(
                 connection, confile.daemon_id, pattern.to_owned()
             ),
@@ -110,15 +110,15 @@ fn main() -> ExitCode {
             ),
         Commands::Feed {path_to_list, matchclass}
             => functions::feed_matchclass(
-                connection, path_to_list.to_owned(), matchclass.to_owned()
+                connection, confile.daemon_id, path_to_list.to_owned(), matchclass.to_owned()
             ),
-        Commands::SetRule {matchclass, qtype, ip}
+        Commands::SetRule {rule, qtype, ip}
             => functions::set_rule(
-                connection, matchclass.to_owned(), qtype.to_owned(), ip.to_owned()
+                connection, confile.daemon_id, rule.to_owned(), qtype.to_owned(), ip.to_owned()
             ),
-        Commands::DelRule {matchclass, qtype}
+        Commands::DelRule {rule, qtype}
             => functions::delete_rule(
-                connection, matchclass.to_owned(), qtype.to_owned()
+                connection, rule.to_owned(), qtype.to_owned()
             )
     };
 

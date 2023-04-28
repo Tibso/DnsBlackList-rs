@@ -189,7 +189,7 @@ Commands:
   del-rule     Delete a rule or a complete matchclass
   drop         Drop all matchclasses that match a pattern
   feed         Feed a list of domains to a matchclass
-  stats        Display stats about IP addresses that match a pattern
+  show-stats   Display stats about IP addresses that match a pattern
   clear-stats  Clear stats about IP addresses that match a pattern
   help         Print this message or the help of the given subcommand(s)
 
@@ -221,7 +221,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> get-info <MATCHCLASS>
 ## **set-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> set-rule <MATCHCLASS> [QTYPE] [IP]
+Usage: redis-ctl <PATH_TO_CONFILE> set-rule <RULE> [QTYPE] [IP]
 ```
 
 **Adds** a new **rule** to the **blacklist**.
@@ -237,16 +237,16 @@ Usage: redis-ctl <PATH_TO_CONFILE> set-rule <MATCHCLASS> [QTYPE] [IP]
 ## **del-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> del-rule <MATCHCLASS> [QTYPE]
+Usage: redis-ctl <PATH_TO_CONFILE> del-rule <RULE> [QTYPE]
 ```
 
-**Deletes** a **matchclass or** one of its two **rules**.
+**Deletes** a **whole rule or** one of its two **qtypes**.
 
-+ Example 1: delete the complete matchclass (both v4 and v6 rules)
++ Example 1: delete the complete rule (both v4 and v6 qtypes)
 
   `[..] del-rule malware#ICU2:surely.notpwned.net.`
 
-+ Example 2: delete ipv6 rule of matchclass
++ Example 2: delete ipv6 qtype of rule
 
   `[..] del-rule malware#ICU2:surely.notpwned.net. AAAA`
 
@@ -270,7 +270,7 @@ Redis' **wildcards** (*?) can be used on the pattern.
 Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS>
 ```
 
-**Feeds** a **matchclass** with a **list** read line by line **from a file**.
+**Feeds** a **matchclass** with a **list** read line by line **from a file**. Each line represents a rule.
 
 + Example:
 
@@ -288,10 +288,10 @@ Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS>
 
   `sedun.dnes.tv. A`
 
-## **stats**
+## **show-stats**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> stats <PATTERN>
+Usage: redis-ctl <PATH_TO_CONFILE> show-stats <PATTERN>
 ```
 
 **Displays** all **stats** that match an IP **pattern**.
@@ -300,12 +300,12 @@ Redis' **wildcards** (*?) can be used on the pattern.
 
 + Example:
 
-  `[..] stats 123.?.??.*`
+  `[..] show-stats 123.?.??.*`
 
-## **clear**
+## **clear-stats**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> clear <PATTERN>
+Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <PATTERN>
 ```
 
 **Deletes** all **stats** that match an **IP pattern**.
@@ -314,7 +314,7 @@ Redis' **wildcards** (*?) can be used on the pattern.
 
 + Example:
 
-  `[..] clear 123.?.??.*`
+  `[..] clear-stats 123.?.??.*`
 
 ## **edit-conf**
 

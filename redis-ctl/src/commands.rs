@@ -31,7 +31,7 @@ pub enum Commands {
 
     /// Add a new rule
     SetRule {
-        matchclass: String,
+        rule: String,
         // "qtype" and "ip" are "Option"s because a rule can be set without them
         qtype: Option<String>,
         ip: Option<String>
@@ -39,7 +39,7 @@ pub enum Commands {
 
     /// Delete a rule or a complete matchclass
     DelRule {
-        matchclass: String,
+        rule: String,
         qtype: Option<String>
     },
 
@@ -53,7 +53,7 @@ pub enum Commands {
     },
 
     /// Display stats about IP addresses that match a pattern
-    Stats {pattern: String},
+    ShowStats {pattern: String},
 
     /// Clear stats about IP addresses that match a pattern
     ClearStats {pattern: String}
