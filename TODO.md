@@ -7,6 +7,7 @@
 - limits
 
 ## dnslrd
+- remove ugly code
 
 - HTTPS handling
 - matchclass counter

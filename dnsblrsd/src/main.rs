@@ -83,9 +83,7 @@ async fn build_config (
     // If an error occurs, the server will not filter
     // Attempts to fetch the blackhole_ips from Redis
     match smembers(redis_manager, format!("dnsblrsd:blackhole_ips:{}", CONFILE.daemon_id)).await {
-        // Could not retrieve blackhole_ips
         Err(err) => warn!("{}: Error retrieving retrieve blackhole_ips: {:?}", CONFILE.daemon_id, err),
-        // Blackhole_ips were succesfully retrieved
         Ok(tmp_blackhole_ips) => {
             // If we haven't received exactly 2 blackhole_ips, there is an issue with the configuration 
             if tmp_blackhole_ips.len() != 2 {
@@ -96,9 +94,7 @@ async fn build_config (
 
                 // Tries to parse first IP
                 match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
-                    // Error occured when parsing first IP
                     Err(err) => warn!("{}: Error parsing first blackhole IP: {:?}", CONFILE.daemon_id, err),
-                    // First IP was successfully parsed
                     Ok(ip1) => {
                         // Tries to parse for second IP
                         match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
@@ -109,7 +105,6 @@ async fn build_config (
                                     | (IpAddr::V4(ipv4), IpAddr::V6(ipv6))
                                     | (IpAddr::V6(ipv6), IpAddr::V4(ipv4))
                                     => {
-                                        // Both blackhole_ips are parsed into IPs
                                         info!("{}: Blackhole_ips received are valid", CONFILE.daemon_id);
 
                                         // Fetches the matchclasses from Redis
@@ -121,11 +116,9 @@ async fn build_config (
                                                 if matchclasses_count == 0 {
                                                     warn!("{}: No matchclass received", CONFILE.daemon_id);
                                                 } else {
-                                                    // They are stored in the configuration variable
-                                                    config.blackhole_ips = Some((ipv4, ipv6));
                                                     // If at least 1 matchclass is received, the server will filter the requests
+                                                    config.blackhole_ips = Some((ipv4, ipv6));
                                                     config.is_filtering = true;
-                                                    // The variable is store in the configuration variable
                                                     config.matchclasses = Some(tmp_matchclasses);
 
                                                     info!("{}: Received {} matchclasses", CONFILE.daemon_id, matchclasses_count)
@@ -181,13 +174,13 @@ async fn build_config (
                 valid_forwarder_count += 1
             }
             // If at least 1 forwarder socket is valid, the server can start
-            match valid_forwarder_count {
-                _ if valid_forwarder_count == forwarders_count => info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count),
-                0 => {
-                    error!("{}: No forwarder is valid", CONFILE.daemon_id);
-                    return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
-                },
-                _ => warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
+            if valid_forwarder_count == forwarders_count {
+                info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
+            } else if valid_forwarder_count == 0 {
+                error!("{}: No forwarder is valid", CONFILE.daemon_id);
+                return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
+            } else if valid_forwarder_count < forwarders_count {
+                warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
             }
         }
     }
@@ -268,14 +261,14 @@ async fn setup_binds (
         };
         successful_binds_count += 1
     }
-    match successful_binds_count {
-        _ if successful_binds_count == bind_count => info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count),
-        0 => {
-            // If no binds were set, returns an error
-            error!("{}: No bind was set", CONFILE.daemon_id);
-            return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
-        },
-        _ => warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
+    if successful_binds_count == bind_count {
+        info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count)
+    } else if successful_binds_count == 0 {
+        // If no binds were set, returns an error
+        error!("{}: No bind was set", CONFILE.daemon_id);
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
+    } else if successful_binds_count < bind_count {
+        warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
     }
 
     Ok(())

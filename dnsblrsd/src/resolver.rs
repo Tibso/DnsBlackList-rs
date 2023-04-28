@@ -113,7 +113,6 @@ pub async fn get_records (
 
     // The result of the resolver queries are handled here
     match wrapped {
-        // If no error occured
         Ok(ok) => {
             // Records the resolver received are cloned in the new records
             for record in ok.records() {
@@ -121,7 +120,6 @@ pub async fn get_records (
             }
             Ok(records)
         },
-        // If an error occured
         Err(err) => {
             // Error types are handled differently
             match err.kind() {
@@ -129,7 +127,7 @@ pub async fn get_records (
                 // propagate the appropriate error up in the stack
                 ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..}
                     => Err(DnsBlrsError::from(DnsBlrsErrorKind::RequestRefused)),
-                // If no record was found, creates an empty answer
+                // If no record was found, returns the empty answer
                 ResolveErrorKind::NoRecordsFound {..}
                     => Ok(records),
                 // If another error type occured, propagate it up in the stack

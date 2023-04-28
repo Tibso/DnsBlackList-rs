@@ -33,7 +33,7 @@ This DNS server **filters queries** using a **blacklist** from a Redis database.
 
 ## **How does it work?**
 
-Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution would allow.
+Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution could.
 
 Based on its **request type** and **query type**, the request will either be **dropped**, **forwarded** to retrieve a **real answer** or **filtered** using its requested **domain name** and the retrieved **answer**.
 
@@ -58,7 +58,7 @@ If **any error occurs** during the handling of a request, the worker **forwards*
 
 ## **Signals**
 
-The server keeps listening for signals on a side-task. These signals can be sent to the server **control** some of its **features**.
+The server keeps listening for signals on a side-task. These signals can be sent to the server to **control** some of its **features**.
 
 | Signal | Description |
 |-------:|-------------|
