@@ -380,13 +380,13 @@ async fn main()
     let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));
 
     // Builds the server's handler structure
-    // This variable is stored into another thread-safe variable by the TrustDns library and is given to each thread
+    // This variable is stored into another thread-safe container and is given to each thread
     let handler = Handler {
-        redis_manager: redis_manager.clone(), arc_config: arc_config.clone(), arc_resolver: arc_resolver.clone()
+        redis_manager: redis_manager.clone(), arc_config: Arc::clone(&arc_config), arc_resolver: Arc::clone(&arc_resolver)
     };
     
     // Spawns a task thread that handles the signals
-    let signals_task = tokio::task::spawn(handle_signals(signals, arc_config.clone(), arc_resolver.clone(), redis_manager));
+    let signals_task = tokio::task::spawn(handle_signals(signals, Arc::clone(&arc_config), Arc::clone(&arc_resolver), redis_manager));
 
     // Creates the server's future
     let mut server = ServerFuture::new(handler);

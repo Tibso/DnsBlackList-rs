@@ -61,7 +61,7 @@ If **any error occurs** during the handling of a request, the worker **forwards*
 The server keeps listening for signals on a side-task. These signals can be sent to the server to **control** some of its **features**.
 
 | Signal | Description |
-|-------:|-------------|
+|--------|-------------|
 | SIGHUP | Reloads the daemon's configuration from the Redis server |
 | SIGUSR1 | Switches ON/OFF the server's filtering |
 | SIGUSR2 | Clears the resolver's cache |

@@ -1,5 +1,7 @@
 # todo
 
+- restructure redis database to allow matchclasses to be disabled without removing them
+
 - acquiring rules and IPs to block with a cron
 - hardening                             ==> new user & nftables & SELinux
 - remove unnecessary services
