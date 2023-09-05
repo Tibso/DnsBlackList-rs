@@ -13,7 +13,7 @@ use crate::{
     redis_mod::smembers
 };
 
-use trust_dns_resolver::{AsyncResolver, name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}};
+use trust_dns_resolver::TokioAsyncResolver;
 use trust_dns_server::ServerFuture;
 
 use redis::aio::ConnectionManager;
@@ -278,7 +278,7 @@ async fn setup_binds (
 async fn handle_signals (
     mut signals: Signals,
     arc_config: Arc<ArcSwap<Config>>,
-    arc_resolver: Arc<AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>>,
+    arc_resolver: Arc<TokioAsyncResolver>,
     mut redis_manager: redis::aio::ConnectionManager,
 ) {
     // Awaits for a signal to be captured

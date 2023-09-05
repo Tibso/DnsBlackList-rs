@@ -3,10 +3,7 @@ use crate::{
     resolver, filtering, CONFILE, redis_mod
 };
 
-use trust_dns_resolver::{
-    AsyncResolver,
-    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
-};
+use trust_dns_resolver::TokioAsyncResolver;
 use trust_dns_server::{
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     proto::op::{Header, ResponseCode, OpCode, MessageType},
@@ -124,7 +121,7 @@ impl RequestHandler for Handler {
 pub struct Handler {
     pub redis_manager: redis::aio::ConnectionManager,
     pub arc_config: Arc<ArcSwap<Config>>,
-    pub arc_resolver: Arc<AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>>
+    pub arc_resolver: Arc<TokioAsyncResolver>
 }
 impl Handler {
     /// Handles the request

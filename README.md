@@ -280,7 +280,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS>
 
   `cicada3301.org. 127.0.0.1 ::1`
 
-+ Example line 2: line adding acustom rule for ipv4 and a default rule for ipv6
++ Example line 2: line adding a custom rule for ipv4 and a default rule for ipv6
 
   `epstein.didnt.kill.himself.tv. 127.0.0.1 AAAA`
 

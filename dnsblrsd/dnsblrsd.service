@@ -1,19 +1,19 @@
 [Unit]
 Description=dnsblrsd
 After=network.target
-ConditionPathExists=/home/thibaut/Desktop/rustproj/DnsBlackList-rs/dnsblrsd/dnsblrsd.conf
+ConditionPathExists=
 
 
 [Service]
-User=thibaut
-Group=thibaut
+User=
+Group=
 Restart=on-failure
 RestartSec=2
 StartLimitInterval=0
 Type=simple
 Restart=always
-ExecStart=/home/thibaut/Desktop/rustproj/DnsBlackList-rs/dnsblrsd/target/release/dnsblrsd
-WorkingDirectory=/home/thibaut/Desktop/rustproj/DnsBlackList-rs/dnsblrsd
+ExecStart=
+WorkingDirectory=
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dnsblrsd

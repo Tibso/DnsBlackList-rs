@@ -11,8 +11,6 @@ use trust_dns_proto::rr::Record;
 use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol},
     TokioAsyncResolver,
-    AsyncResolver,
-    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime},
     IntoName,
     error::{ResolveErrorKind, ResolveError},
     lookup::Lookup
@@ -25,7 +23,7 @@ use tracing::info;
 pub fn build_resolver (
     config: &Config
 )
--> AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>> {
+-> TokioAsyncResolver {
     // Resolver's configuration variable is initialized
     let mut resolver_config = ResolverConfig::new();
     // Resolver's domain is set to the local domain
@@ -50,7 +48,7 @@ pub fn build_resolver (
     let resolver = TokioAsyncResolver::tokio(
         resolver_config,
         resolver_opts
-    ).unwrap();
+    );
 
     info!("{}: Resolver built", CONFILE.daemon_id);
     resolver
@@ -59,7 +57,7 @@ pub fn build_resolver (
 /// Uses the resolver to retrieve the correct records
 pub async fn get_records (
     request: &Request,
-    resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
+    resolver: TokioAsyncResolver
 )
 -> DnsBlrsResult<Vec<Record>> {
     // Records vector is initialized to be pushed into later

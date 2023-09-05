@@ -5,10 +5,8 @@ use crate::{
 
 use trust_dns_client::rr::{RData, RecordType, Record};
 use trust_dns_server::server::Request;
-use trust_dns_resolver::{
-    AsyncResolver,
-    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime}
-};
+use trust_dns_resolver::TokioAsyncResolver;
+use trust_dns_proto::rr::rdata;
 
 use tracing::info;
 use smallvec::{SmallVec, smallvec};
@@ -20,7 +18,7 @@ pub async fn filter (
     request: &Request,
     config: &Guard<Arc<Config>>,
     redis_manager: &mut redis::aio::ConnectionManager,
-    resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>
+    resolver: TokioAsyncResolver
 )
 -> DnsBlrsResult<Vec<Record>> {
     // Stores the record_type of the request
@@ -82,8 +80,8 @@ pub async fn filter (
                 let rdata: RData = if rule == "1" {
                     // "rdata" is filled with the default blackhole_ip for the corresponding RecordType
                     match record_type {
-                        RecordType::A => RData::A(blackhole_ipv4),
-                        RecordType::AAAA => RData::AAAA(blackhole_ipv6),
+                        RecordType::A => RData::A(rdata::a::A(blackhole_ipv4)),
+                        RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6)),
                         // Because the other types were filtered out before, this part of the code is unreachable
                         // This macro indicates it to the compiler
                         _ => unreachable!()
@@ -92,8 +90,8 @@ pub async fn filter (
                     // The rule seems to have custom IPs to respond with
                     // If found value is an IP, "rdata" is filled with the IP of the corresponding RecordType
                     match rule.parse::<IpAddr>() {
-                        Ok(IpAddr::V4(ipv4)) => RData::A(ipv4),
-                        Ok(IpAddr::V6(ipv6)) => RData::AAAA(ipv6),
+                        Ok(IpAddr::V4(ipv4)) => RData::A(rdata::a::A(ipv4)),
+                        Ok(IpAddr::V6(ipv6)) => RData::AAAA(rdata::aaaa::AAAA(ipv6)),
                         // An error occured, the rule must be broken
                         Err(_) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
                     }
@@ -120,14 +118,14 @@ pub async fn filter (
             // If a record is blacklisted, replace it with "blackhole_ips"
             for record in &records {
                 // "ip" is extracted from the record's data
-                let ip: IpAddr = record.data().unwrap().to_ip_addr().unwrap();
+                let ip: IpAddr = record.data().unwrap().ip_addr().unwrap();
 
                 // If the record is blacklisted, returns the corresponding "blackhole_ip"
                 if redis_mod::sismember(redis_manager, format!("dnsblrs:blocked_ips_v4:{}", CONFILE.daemon_id), ip.to_string()).await? {
                     // Clears the previous records
                     records.clear();
                     // Stores the new record
-                    records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(blackhole_ipv4)));
+                    records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
 
                     return Ok(records)
                 }
@@ -135,11 +133,11 @@ pub async fn filter (
         },
         RecordType::AAAA => {
             for record in &records {
-                let ip: IpAddr = record.data().unwrap().to_ip_addr().unwrap();
+                let ip: IpAddr = record.data().unwrap().ip_addr().unwrap();
 
                 if redis_mod::sismember(redis_manager, format!("dnsblrs:blocked_ips_v6:{}", CONFILE.daemon_id), ip.to_string()).await? {
                     records.clear();
-                    records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(blackhole_ipv6)));
+                    records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6))));
 
                     return Ok(records)
                 }
