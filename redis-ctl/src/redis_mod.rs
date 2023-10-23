@@ -10,13 +10,11 @@ pub fn hset (
     value: String
 )
 -> RedisResult<bool> {
-    // The command returns the number of values added in a serialized "Value"
     let ser_value = connection.req_command(Cmd::new()
         .arg("hset")
         .arg(hash)
         .arg(key)
         .arg(value))?;
-    // Deserializes Redis "Value"
     let result = from_redis_value(&ser_value)?;
 
     Ok(result)
@@ -46,7 +44,6 @@ pub fn del_vec (
     keys: Vec<String>
 )
 -> RedisResult<usize> {
-    // Some commands can take a vector as input
     let ser_value = connection.req_command(Cmd::new()
         .arg("del")
         .arg(keys))?;

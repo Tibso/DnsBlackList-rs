@@ -3,10 +3,10 @@ use crate::{
     Config, resolver, redis_mod, CONFILE
 };
 
-use trust_dns_client::rr::{RData, RecordType, Record};
-use trust_dns_server::server::Request;
-use trust_dns_resolver::TokioAsyncResolver;
-use trust_dns_proto::rr::rdata;
+use hickory_client::rr::{RData, RecordType, Record};
+use hickory_server::server::Request;
+use hickory_resolver::TokioAsyncResolver;
+use hickory_proto::rr::rdata;
 
 use tracing::info;
 use smallvec::{SmallVec, smallvec};
@@ -21,10 +21,8 @@ pub async fn filter (
     resolver: TokioAsyncResolver
 )
 -> DnsBlrsResult<Vec<Record>> {
-    // Stores the record_type of the request
     let record_type = request.query().query_type();
 
-    // Converts the domain name to string
     let mut domain_name = request.query().name().to_string();
     // Because it is a root domain name, we remove the trailing dot from the String
     domain_name.pop();
@@ -54,23 +52,18 @@ pub async fn filter (
     let (blackhole_ipv4, blackhole_ipv6) = config.blackhole_ips.unwrap();
     let matchclasses = config.matchclasses.clone().unwrap();
 
-    // The number of names from the domain name to match is iterated onto
     for index in order {
-        // The domain name is reconstructed based on the index of each iteration of order
+        // The domain name is reconstructed based on each iteration of order
         let mut domain_to_check = names[name_count - (index as usize)..name_count].join(".");
-        // Because we are matching root domain names, we have to put back the trailing dot
+        // Because we are matching root domain names, we have to put the trailing dot back in place
         domain_to_check.push('.');
 
-        // "matchclasses" is converted to an iterable and is iterated onto
-        // to attempt to match one of the matchclasses to the domain name
         for matchclass in &matchclasses {
             let full_matchclass = format!("{}:{}", matchclass, domain_to_check);
 
             // Attempts to find a rule with the provided matchclass and domain name
-            // If an error occurs, it is propagated up in the stack
             let rule = redis_mod::hget(redis_manager, full_matchclass, record_type.to_string()).await?;
 
-            // If the rule exists
             if rule != "Nil" {
                 info!("{}: request:{} \"{}\" has matched \"{}\" for record type: \"{}\"",
                     CONFILE.daemon_id, request.id(), domain_to_check, matchclass, record_type
@@ -78,21 +71,16 @@ pub async fn filter (
 
                 // If found value is "1", the default blackhole_ips are used to lie to the request
                 let rdata: RData = if rule == "1" {
-                    // "rdata" is filled with the default blackhole_ip for the corresponding RecordType
                     match record_type {
                         RecordType::A => RData::A(rdata::a::A(blackhole_ipv4)),
                         RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6)),
-                        // Because the other types were filtered out before, this part of the code is unreachable
-                        // This macro indicates it to the compiler
                         _ => unreachable!()
                     }
                 } else {
                     // The rule seems to have custom IPs to respond with
-                    // If found value is an IP, "rdata" is filled with the IP of the corresponding RecordType
                     match rule.parse::<IpAddr>() {
                         Ok(IpAddr::V4(ipv4)) => RData::A(rdata::a::A(ipv4)),
                         Ok(IpAddr::V6(ipv6)) => RData::AAAA(rdata::aaaa::AAAA(ipv6)),
-                        // An error occured, the rule must be broken
                         Err(_) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
                     }
                 };
@@ -100,7 +88,6 @@ pub async fn filter (
                 // Write statistics about the source IP
                 redis_mod::write_stats(redis_manager, request.request_info().src.ip(), true).await?;
 
-                // Returns the answer to the calling function
                 return Ok(vec![Record::from_rdata(request.query().name().into(), 3600, rdata)])
             }
         }
@@ -108,7 +95,6 @@ pub async fn filter (
 
     // If no rule was found, the resolver is used to fetch the correct answers
     let mut records = resolver::get_records(request, resolver).await?;
-    // Do not check records if there is none
     if records.is_empty() {
         return Ok(records)
     }
@@ -117,14 +103,10 @@ pub async fn filter (
         RecordType::A => {
             // If a record is blacklisted, replace it with "blackhole_ips"
             for record in &records {
-                // "ip" is extracted from the record's data
                 let ip: IpAddr = record.data().unwrap().ip_addr().unwrap();
 
-                // If the record is blacklisted, returns the corresponding "blackhole_ip"
                 if redis_mod::sismember(redis_manager, format!("dnsblrs:blocked_ips_v4:{}", CONFILE.daemon_id), ip.to_string()).await? {
-                    // Clears the previous records
                     records.clear();
-                    // Stores the new record
                     records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
 
                     return Ok(records)

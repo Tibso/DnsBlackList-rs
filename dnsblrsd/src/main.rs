@@ -13,8 +13,8 @@ use crate::{
     redis_mod::smembers
 };
 
-use trust_dns_resolver::TokioAsyncResolver;
-use trust_dns_server::ServerFuture;
+use hickory_resolver::TokioAsyncResolver;
+use hickory_server::ServerFuture;
 
 use redis::aio::ConnectionManager;
 
@@ -43,14 +43,12 @@ fn read_confile (
     file_name: &str
 )
 -> Confile {
-    // Fills the configuration file structure from the JSON at the provided file path
     let confile: Confile = {
-        // Reads the file into a big String
         let data = match fs::read_to_string(file_name) {
             Ok(ok) => ok,
             Err(err) => {
                 println!("Error reading config file: {}", err);
-                // Exits with CONFIG exitcode on error
+                // CONFIG exitcode
                 exit(78)
             }
         };
@@ -59,7 +57,7 @@ fn read_confile (
             Ok(ok) => ok,
             Err(err) => {
                 println!("Error deserializing config file data: {}", err);
-                // Exits with CONFIG exitcode on error
+                // CONFIG exitcode
                 exit(78)
             }
         }
@@ -76,27 +74,24 @@ async fn build_config (
     redis_manager: &mut ConnectionManager
 )
 -> DnsBlrsResult<Config> {
-    // Initialize the configuration variable with the default values using the Default trait
     let mut config = Config::default();
 
     // The configuration is retrieved from Redis
     // If an error occurs, the server will not filter
+    
     // Attempts to fetch the blackhole_ips from Redis
     match smembers(redis_manager, format!("dnsblrsd:blackhole_ips:{}", CONFILE.daemon_id)).await {
         Err(err) => warn!("{}: Error retrieving retrieve blackhole_ips: {:?}", CONFILE.daemon_id, err),
         Ok(tmp_blackhole_ips) => {
-            // If we haven't received exactly 2 blackhole_ips, there is an issue with the configuration 
+            // If we haven't received exactly 2 blackhole_ips, there is an issue with the configuration
             if tmp_blackhole_ips.len() != 2 {
                 warn!("{}: Amount of blackhole_ips received were not 2 (must have v4 and v6)", CONFILE.daemon_id);
             } else {
-                // Vector is made into an iterable to parse both IPs
                 let mut tmp_blackhole_ips = tmp_blackhole_ips.iter();
 
-                // Tries to parse first IP
                 match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
                     Err(err) => warn!("{}: Error parsing first blackhole IP: {:?}", CONFILE.daemon_id, err),
                     Ok(ip1) => {
-                        // Tries to parse for second IP
                         match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
                             Err(err) => warn!("{}: Error parsing second blackhole IP: {:?}", CONFILE.daemon_id, err),
                             Ok(ip2) => {
@@ -112,7 +107,6 @@ async fn build_config (
                                             Err(err) => warn!("{}: Error retrieving matchclasses: {:?}", CONFILE.daemon_id, err),
                                             Ok(tmp_matchclasses) => {
                                                 let matchclasses_count = tmp_matchclasses.len();
-                                                // If no matchclass is received, the server will not filter
                                                 if matchclasses_count == 0 {
                                                     warn!("{}: No matchclass received", CONFILE.daemon_id);
                                                 } else {
@@ -136,12 +130,11 @@ async fn build_config (
         }
     }
 
-    // If filtering is not enabled, displays a warning
     if !config.is_filtering {
         warn!("{}: The server will not filter any request and so will not lie", CONFILE.daemon_id)
     }
 
-    // If an error occurs beyond here, we make return the error
+    // If an error occurs beyond here, we return the error
     // because the server cannot start without these next values
 
     // Attempts to fetch the forwarders' sockets from Redis
@@ -173,7 +166,7 @@ async fn build_config (
                 );
                 valid_forwarder_count += 1
             }
-            // If at least 1 forwarder socket is valid, the server can start
+            // At least 1 forwarder socket must be valid
             if valid_forwarder_count == forwarders_count {
                 info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
             } else if valid_forwarder_count == 0 {
@@ -193,7 +186,6 @@ async fn build_config (
         },
         Ok(binds) => {
             let bind_count = binds.len();
-            // If no bind is received, the server cannot start
             if bind_count == 0 {
                 error!("{}: No bind received", CONFILE.daemon_id);
                 return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
@@ -216,15 +208,11 @@ async fn setup_binds (
     let bind_count = config.binds.len();
     let mut successful_binds_count = 0usize;
 
-    // Clones the binds vector from the configuration variable
-    // The binds vector is then made into an iterable to iterate onto
     for bind in &config.binds {
         let mut splits = bind.split('=');
 
         match splits.next() {
             Some("UDP") => {
-                // Attempts to bind an UDP port
-
                 let bind = match splits.next() {
                     Some(bind) => bind,
                     None => {
@@ -239,8 +227,6 @@ async fn setup_binds (
                 server.register_socket(socket)
             },
             Some("TCP") => {
-                // Attempts to bind a TCP port
-
                 let bind = match splits.next() {
                     Some(bind) => bind,
                     None => {
@@ -261,10 +247,10 @@ async fn setup_binds (
         };
         successful_binds_count += 1
     }
+    // At least 1 bind must be set
     if successful_binds_count == bind_count {
         info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count)
     } else if successful_binds_count == 0 {
-        // If no binds were set, returns an error
         error!("{}: No bind was set", CONFILE.daemon_id);
         return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
     } else if successful_binds_count < bind_count {
@@ -288,7 +274,6 @@ async fn handle_signals (
             SIGHUP => {
                 info!("Captured SIGHUP");
 
-                // Rebuilds the server's configuration
                 let Ok(new_config) = build_config(&mut redis_manager).await else {
                     error!("Could not rebuild the config");
                     continue
@@ -306,7 +291,7 @@ async fn handle_signals (
 
                 // Copies the configuration stored in the thread-safe variable
                 let mut config = arc_config.load_full().as_ref().clone();
-                // Switches the boolean
+
                 config.is_filtering = !config.is_filtering;
 
                 if config.is_filtering {
@@ -338,32 +323,29 @@ async fn main()
         .with_target(false)
         .with_thread_ids(true)
         .without_time();
-    // Sets the logging subscriber with the custom format
     tracing_subscriber::fmt().event_format(tracing_format).init();
 
     // Prepares the signals handler
     let Ok(signals) = Signals::new([SIGHUP, SIGUSR1, SIGUSR2]) else {
         error!("{}: Could not create signal stream", CONFILE.daemon_id);
-        // Returns with OSERR exitcode on error
+        // OSERR exitcode
         return ExitCode::from(71)
     };
     let signals_handler = signals.handle();
 
-    // Builds the Redis connection manager
     let mut redis_manager = match redis_mod::build_manager().await {
         Ok(ok) => ok,
         Err(_) => {
             error!("{}: An error occured while building the Redis connection manager", CONFILE.daemon_id);
-            // Returns with UNAVAILABLE exitcode on error
+            // UNAVAILABLE exitcode
             return ExitCode::from(69)
         }
     };
-    // Builds the server's configuration
     let config = match build_config(&mut redis_manager).await {
         Ok(ok) => ok,
         Err(err) => {
             error!("{}: An error occured while building server configuration: {:?}", CONFILE.daemon_id, err);
-            // Returns with CONFIG exitcode on error
+            // CONFIG exitcode
             return ExitCode::from(78)
         }
     };
@@ -379,7 +361,6 @@ async fn main()
     // This variable is optimized for read-mostly scenarios
     let arc_config = Arc::new(ArcSwap::from_pointee(config.clone()));
 
-    // Builds the server's handler structure
     // This variable is stored into another thread-safe container and is given to each thread
     let handler = Handler {
         redis_manager: redis_manager.clone(), arc_config: Arc::clone(&arc_config), arc_resolver: Arc::clone(&arc_resolver)
@@ -388,13 +369,11 @@ async fn main()
     // Spawns a task thread that handles the signals
     let signals_task = tokio::task::spawn(handle_signals(signals, Arc::clone(&arc_config), Arc::clone(&arc_resolver), redis_manager));
 
-    // Creates the server's future
     let mut server = ServerFuture::new(handler);
 
-    // Binds the server's ports
     if let Err(err) = setup_binds(&mut server, &config).await {
         error!("An error occured while setting up binds: {:?}", err);
-        // Returns with OSERR exitcode on error
+        // OSERR exitcode
         return ExitCode::from(71)
     };
 
@@ -402,17 +381,18 @@ async fn main()
     // Drives the server to completion (indefinite)
     if let Err(err) = server.block_until_done().await {
         error!("An error occured when running server future to completion: {:?}", err);
-        // Returns with SOFTWARE exitcode on error
+        // SOFTWARE exitcode
         return ExitCode::from(70)
     };
 
-    // Code should not be able to reach here
+    // Code should (as of now) not be able to reach here
+    // Need to add a graceful shutdown
 
     signals_handler.close();
     // Signals' task is driven to completion
     if let Err(err) = signals_task.await {
         error!("An error occured when running signals future to completion: {:?}", err);
-        // Returns with SOFTWARE exitcode on error
+        // SOFTWARE exitcode
         return ExitCode::from(70)
     };
 

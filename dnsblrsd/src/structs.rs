@@ -7,7 +7,7 @@ use serde::{Serialize, Deserialize};
 
 use redis::RedisError;
 
-use trust_dns_resolver::error::ResolveError;
+use hickory_resolver::error::ResolveError;
 
 pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
 
@@ -27,7 +27,6 @@ pub struct Config {
     pub matchclasses: Option<Vec<String>>,
     pub blackhole_ips: Option<(Ipv4Addr, Ipv6Addr)>
 }
-// Implementation of the Default trait
 impl Default for Config {
     /// Initializes the configuration structure with its default values
     fn default() -> Self {
@@ -71,8 +70,8 @@ pub enum DnsBlrsErrorKind {
     BuildManagerError,
     BuildConfigError,
     RequestRefused,
-    // The custom error type wraps around the external crates errors
-    // to enable error propagation
+    // This custom error type wraps the external crates errors
+    // to enable proper error propagation
     ExternCrateError(ExternCrateErrorKind),
 }
 

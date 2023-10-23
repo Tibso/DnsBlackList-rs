@@ -2,15 +2,15 @@
 
 # **DnsBlackList-rs**
 
-DNS server with custom rules using [Trust-DNS](https://github.com/bluejekyll/trust-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
+DNS forwarder with custom rules using [Trust-DNS](https://github.com/bluejekyll/trust-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 
-This DNS server **filters queries** using a **blacklist** from a Redis database. The server **lies** to DNS requests asking for **domains** that are known as **dangerous or unwanted** to **protect** its **users** from them.
+This DNS forwarder **filters queries** using a **blacklist** from a Redis database. The forwarder **lies** to DNS requests asking for **domains** that are known as **dangerous or unwanted** to **protect** its **users** from them.
 
 # **Repository composition**
 
 | Directory | Description |
 |--------|-------------|
-| *dnsblrsd* | Contains the server's daemon source code and its configuration |
+| *dnsblrsd* | Contains the forwarder's daemon source code and its configuration |
 | *redis-ctl* | Contains the source code of the tool used to modify the blacklist stored in the Redis database |
 
 # **Goals**
@@ -29,17 +29,17 @@ This DNS server **filters queries** using a **blacklist** from a Redis database.
 
 + [TBA] *Windows*
 
-# **Server**
+# **forwarder**
 
 ## **How does it work?**
 
-Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the server to handle a much heavier load than a single-threaded solution could.
+Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the forwarder to handle a much heavier load than a single-threaded solution could.
 
 Based on its **request type** and **query type**, the request will either be **dropped**, **forwarded** to retrieve a **real answer** or **filtered** using its requested **domain name** and the retrieved **answer**.
 
 When **filtered**, the requested **domain** name is **matched against** the Redis **blacklist** using the domain name subdomains which are optimally ordered to speed up the matching process.
 
-Redis **searches** for a **rule** for the requested **domain** name. If **no rule** is found, the request is forwarded to other DNS servers to retrieve a **real IP** which is also **filtered** against an **IP blacklist**.
+Redis **searches** for a **rule** for the requested **domain** name. If **no rule** is found, the request is forwarded to other DNS forwarders to retrieve a **real IP** which is also **filtered** against an **IP blacklist**.
 
 **Otherwise**, the value recovered from the rule determines what is done next. The value is **either** the **custom address** that has to be used as **answer** to this request **or** it indicates that the **default address** has to be used as **answer**.
 
@@ -58,19 +58,19 @@ If **any error occurs** during the handling of a request, the worker **forwards*
 
 ## **Signals**
 
-The server keeps listening for signals on a side-task. These signals can be sent to the server to **control** some of its **features**.
+The forwarder keeps listening for signals on a side-task. These signals can be sent to the forwarder to **control** some of its **features**.
 
 | Signal | Description |
 |--------|-------------|
-| SIGHUP | Reloads the daemon's configuration from the Redis server |
-| SIGUSR1 | Switches ON/OFF the server's filtering |
+| SIGHUP | Reloads the daemon's configuration from the Redis forwarder |
+| SIGUSR1 | Switches ON/OFF the forwarder's filtering |
 | SIGUSR2 | Clears the resolver's cache |
 
 ## **Redis configuration structure example**
 
 ### **Binds**
 
-The **sockets** the server's **daemon** will attempt to **bind to**.
+The **sockets** the forwarder's **daemon** will attempt to **bind to**.
 
 [SET] dnsblrsd:binds:*[DAEMON_ID]*
 
@@ -81,12 +81,12 @@ The **sockets** the server's **daemon** will attempt to **bind to**.
 
 ### **Forwarders**
 
-The **DNS servers** that will **handle** the **forwarded requests**.
+The **DNS forwarders** that will **handle** the **forwarded requests**.
 
 [SET] dnsblrsd:forwarders:*[DAEMON_ID]*
 
-+ 123.456.789.1:53
-+ 123.456.789.2:53
++ 203.0.113.0.1:53
++ 203.0.113.0.2:53
 
 ### **Blackhole IPs**
 
@@ -111,14 +111,14 @@ Each **rule** is **linked** to its **matchclass** using its **ID**. This is so h
 [HASH] adult#IT2#20230419:you.know.what.i.did.last.night.com.
 
 + A
-  + 123.456.789.69
+  + 203.0.113.0.69
 + AAAA
   + 1
 
 [HASH] adult#IT2#20230419:i.built.that.fire.over.there.com.
 
 + A
-  + 123.456.789.42
+  + 203.0.113.0.42
 
 ### **Blocked IPs**
 
@@ -126,8 +126,8 @@ Lists of **IPs** that must be **blocked** from the forwarders' answers. **V4 and
 
 [SET] dnsblrsd:blocked_ips_v4:*[DAEMON_ID]*
 
-+ 123.456.789.42
-+ 123.456.789.43
++ 203.0.113.0.42
++ 203.0.113.0.43
 
 [SET] dnsblrsd:blocked_ips_v6:*[DAEMON_ID]*
 
@@ -172,7 +172,7 @@ Lastly, the `systemctl` **command** is used to **configure** the **service**:
 
 ### **DO NOT**
 
-+ **Use** a **superuser** to **run** the **server**. **Create** a new **user** with **limited privileges** to run the server with. Even though this server's stability was thoroughly checked via fuzzing, running the server on **elevated privileges** would **allow** an **unforeseen vulnerability** to **wreak havoc** on the system. A new **limited user** would **restrain** an **intruder** to the **limited privileges** unless escalation is possible.
++ **Use** a **superuser** to **run** the **forwarder**. **Create** a new **user** with **limited privileges** to run the forwarder with. Even though this forwarder's stability was thoroughly checked via fuzzing, running the forwarder on **elevated privileges** would **allow** an **unforeseen vulnerability** to **wreak havoc** on the system. A new **limited user** would **restrain** an **intruder** to the **limited privileges** unless escalation is possible.
 
 # **Redis-ctl**
 
@@ -375,7 +375,7 @@ There can **only** be **2** forwarders.
 
 + Example:
 
-  `[...] edit-conf forwarders 123.456.789.2:53 123.456.789.3:53`
+  `[...] edit-conf forwarders 203.0.113.0.2:53 203.0.113.0.3:53`
 
 ### **blackhole-ips**
 
@@ -401,4 +401,4 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf block-ips <IP1> [IP2 IP3 ...]
 
 + Example:
 
-  `[...] edit-conf block-ips 123.456.789.42 123.456.789.69`
+  `[...] edit-conf block-ips 203.0.113.0.42 203.0.113.0.69`

@@ -3,13 +3,13 @@ use crate::{
     resolver, filtering, CONFILE, redis_mod
 };
 
-use trust_dns_resolver::TokioAsyncResolver;
-use trust_dns_server::{
+use hickory_resolver::TokioAsyncResolver;
+use hickory_server::{
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     proto::op::{Header, ResponseCode, OpCode, MessageType},
     authority::MessageResponseBuilder
 };
-use trust_dns_proto::rr::RecordType;
+use hickory_proto::rr::RecordType;
 
 use arc_swap::ArcSwap;
 use std::sync::Arc;
@@ -25,7 +25,6 @@ impl RequestHandler for Handler {
         mut response: R
     )
     -> ResponseInfo {
-        // Attempts to handle the request
         match self.handle_request(request, response.clone()).await {
             // The request was served succesfully
             // The request's info is returned to the subscriber to be displayed
@@ -34,14 +33,10 @@ impl RequestHandler for Handler {
             // An error occured while serving the request
             // The error was propagated throughout the functions to here
             Err(err) => {
-                // Creates the message response builder based on the request
                 let builder = MessageResponseBuilder::from_message_request(request);
 
-                // Creates a new header based on the request's header
                 let mut header = Header::response_from_request(request.header());
-                // Configures the header to specify this response is not authoritative
                 header.set_authoritative(false);
-                // Configures the header to specify recursion is available on this server
                 header.set_recursion_available(true);
 
                 // Each error type is handled differently
@@ -124,7 +119,6 @@ pub struct Handler {
     pub arc_resolver: Arc<TokioAsyncResolver>
 }
 impl Handler {
-    /// Handles the request
     async fn handle_request <R: ResponseHandler> (
         &self,
         request: &Request,
@@ -148,9 +142,7 @@ impl Handler {
 
         // Creates a new header based on the request's header
         let mut header = Header::response_from_request(request.header());
-        // Configures the header to specify this response is not authoritative
         header.set_authoritative(false);
-        // Configures the header to specify recursion is available on this server
         header.set_recursion_available(true);
 
         // Borrows the configuration from the thread-safe variable
@@ -159,7 +151,6 @@ impl Handler {
         // Copies the resolver out of the thread-safe variable
         let resolver = self.arc_resolver.as_ref().clone();
 
-        // Copies the Redis connection manager
         let mut redis_manager = self.redis_manager.clone();
         
         // Write statistics about the source IP
@@ -176,7 +167,7 @@ impl Handler {
             false => resolver::get_records(request, resolver).await?
         };
 
-        // Message response is built to send the response
+        // Message response is built using the new header
         let message = builder.build(header, &records, &[], &[], &[]);
         // Attempts to send the response
         match response.send_response(message).await {

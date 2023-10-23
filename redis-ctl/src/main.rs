@@ -20,24 +20,21 @@ fn main() -> ExitCode {
     // Arguments are parsed and stored in the Cli struct
     let cli = Cli::parse();
 
-    // First argument should be the path_to_confile,
-    // which is read to build the configuration file
+    // First argument should be the path_to_confile
     let confile: Confile = {
-        // Reads the file into a big String
         let tmp_string = match fs::read_to_string(&cli.path_to_confile) {
             Ok(ok) => ok,
             Err(err) => {
                 println!("Error reading file from: {:?}: {:?}", cli.path_to_confile, err);
-                // Returns with CONFIG exitcode on error
+                // CONFIG exitcode on error
                 return ExitCode::from(78)
             }
         };
-        // Deserializes the JSON String
         match serde_json::from_str(&tmp_string) {
             Ok(ok) => ok,
             Err(err) => {
                 println!("Error deserializing config file data: {:?}", err);
-                // Returns with CONFIG exitcode on error
+                // CONFIG exitcode on error
                 return ExitCode::from(78)
             }
         }
@@ -48,16 +45,15 @@ fn main() -> ExitCode {
         Ok(ok) => ok,
         Err(err) => {
             println!("Error probing the Redis server: {:?}", err);
-            // Returns with NOHOST exitcode on error
+            // NOHOST exitcode on error
             return ExitCode::from(68)
         }
     };
-    // A connection is created using the client
     let connection = match client.get_connection() {
         Ok(ok) => ok,
         Err(err) => {
             println!("Error creating the connection: {:?}", err);
-            // Returns with UNAVAILABLE exitcode on error
+            // UNAVAILABLE exitcode on error
             return ExitCode::from(69) // NICE
         }
     };
@@ -122,7 +118,6 @@ fn main() -> ExitCode {
             )
     };
 
-    // Returns both result variants
     match result {
         Ok(exitcode) => exitcode,
         // Converts errors to UNAVAILABLE exitcode
