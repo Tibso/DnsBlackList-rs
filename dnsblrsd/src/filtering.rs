@@ -59,10 +59,10 @@ pub async fn filter (
         domain_to_check.push('.');
 
         for matchclass in &matchclasses {
-            let full_matchclass = format!("{}:{}", matchclass, domain_to_check);
+            let rule = format!("{}:{}", matchclass, domain_to_check);
 
             // Attempts to find a rule with the provided matchclass and domain name
-            let rule = redis_mod::hget(redis_manager, full_matchclass, record_type.to_string()).await?;
+            let rule = redis_mod::hget(redis_manager, rule, record_type.to_string()).await?;
 
             if rule != "Nil" {
                 info!("{}: request:{} \"{}\" has matched \"{}\" for record type: \"{}\"",

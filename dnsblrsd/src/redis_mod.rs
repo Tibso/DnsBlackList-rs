@@ -115,32 +115,6 @@ pub async fn sismember (
     Ok(deser_answer)
 }
 
-/*
-/// Fetches all the keys of a hash from Redis 
-pub async fn hkeys (
-    manager: &mut ConnectionManager,
-    matchclass_kind: &str
-)
--> DnsBlrsResult<Vec<String>> {
-    // This Redis command fetches all the keys of a hash in a serialized "Value"
-    let ser_answer = match manager.req_packed_command(Cmd::new()
-        .arg("HKEYS")
-        .arg(format!("{}:{}", matchclass_kind, CONFILE.daemon_id))
-    ).await {
-        Ok(ok) => ok,
-        Err(err) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
-    };
-
-    // The serialized "Value" is deserialized into a vector
-    let deser_answer: Vec<String> = match FromRedisValue::from_redis_value(&ser_answer) {
-        Ok(ok) => ok,
-        Err(err) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::RedisError(err))))
-    };
-
-    Ok(deser_answer)
-}
-*/
-
 /// Writes stats on Redis about the IP of the request
 pub async fn write_stats (
     manager: &mut ConnectionManager,
@@ -169,7 +143,7 @@ pub async fn write_stats (
     }
 
     let ip_string = if ip.is_ipv6() {
-        format!("[{}]", ip)
+        format!("[{ip}]")
     } else {
         ip.to_string()
     };
@@ -177,7 +151,7 @@ pub async fn write_stats (
     // This Redis command sets the time at which a rule was matched by the IP or the last time the IP was seen
     if let Err(err) = manager.req_packed_command(Cmd::new()
         .arg("HSET")
-        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip_string))
+        .arg(format!("stats:{}:{ip_string}", CONFILE.daemon_id))
         .arg(set_key)
         .arg(time_epoch)
     ).await {
@@ -187,7 +161,7 @@ pub async fn write_stats (
     // This Redis command increments by 1 the number of matches or requests of the IP
     if let Err(err) = manager.req_packed_command(Cmd::new()
         .arg("HINCRBY")
-        .arg(format!("stats:{}:{}", CONFILE.daemon_id, ip_string))
+        .arg(format!("stats:{}:{ip_string}", CONFILE.daemon_id))
         .arg(incr_key)
         .arg(1)
     ).await {

@@ -1,9 +1,6 @@
 # todo
 
-- acquiring rules and IPs to block with a cron
-
-- dnsdist -> HTTPs handling & block stuff using eBPF?
-
+- only add the new rules that are not contained in older matchclasses (diff)
 
 ## dnslrd
 
@@ -11,8 +8,8 @@
 
 - matchclass increment counter
 
-- add windows signal and build option
+- add windows signal and build option ???
 
 ## redis-ctl
 
-- add clarity to optional values?
+- add clarity to optional values ???

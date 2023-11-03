@@ -21,7 +21,7 @@ use redis::aio::ConnectionManager;
 use tokio::net::{TcpListener, UdpSocket};
 use arc_swap::ArcSwap;
 use std::{
-    time::Duration, fs, sync::Arc, 
+    time::Duration, fs, sync::Arc,
     process::{ExitCode, exit},
     net::{IpAddr, SocketAddr}
 };
@@ -168,7 +168,7 @@ async fn build_config (
             }
             // At least 1 forwarder socket must be valid
             if valid_forwarder_count == forwarders_count {
-                info!("{}: all {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
+                info!("{}: All {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
             } else if valid_forwarder_count == 0 {
                 error!("{}: No forwarder is valid", CONFILE.daemon_id);
                 return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
@@ -249,7 +249,7 @@ async fn setup_binds (
     }
     // At least 1 bind must be set
     if successful_binds_count == bind_count {
-        info!("{}: all {} binds were set", CONFILE.daemon_id, successful_binds_count)
+        info!("{}: All {} binds were set", CONFILE.daemon_id, successful_binds_count)
     } else if successful_binds_count == 0 {
         error!("{}: No bind was set", CONFILE.daemon_id);
         return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))

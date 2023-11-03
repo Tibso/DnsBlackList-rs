@@ -31,7 +31,9 @@ pub enum Commands {
 
     /// Add a new rule
     SetRule {
-        rule: String,
+        matchclass_type: String,
+        matchclass_id: String,
+        domain: String,
         // "qtype" and "ip" are "Option"s because a rule can be set without them
         qtype: Option<String>,
         ip: Option<String>
@@ -39,7 +41,10 @@ pub enum Commands {
 
     /// Delete a rule or a complete matchclass
     DelRule {
-        rule: String,
+        matchclass_type: String,
+        matchclass_id: String,
+        domain: String,
+        date: String,
         qtype: Option<String>
     },
 
@@ -49,7 +54,8 @@ pub enum Commands {
     /// Feed a list of domains to a matchclass
     Feed {
         path_to_list: PathBuf,
-        matchclass: String
+        matchclass_type: String, 
+        matchclass_id: String
     },
 
     /// Display stats about IP addresses that match a pattern

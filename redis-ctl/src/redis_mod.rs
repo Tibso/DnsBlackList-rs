@@ -20,6 +20,30 @@ pub fn hset (
     Ok(result)
 }
 
+/// Sets multiple values and fields of a hash in Redis
+/// 
+/// Returns "true" if the fields were successfully added
+pub fn hmset (
+    connection: &mut Connection,
+    hash: String,
+    key_1: &str,
+    value_1: String,
+    key_2: &str,
+    value_2: String
+)
+-> RedisResult<bool> {
+    let ser_value = connection.req_command(Cmd::new()
+        .arg("hset")
+        .arg(hash)
+        .arg(key_1)
+        .arg(value_1)
+        .arg(key_2)
+        .arg(value_2))?;
+    let result = from_redis_value(&ser_value)?;
+
+    Ok(result)
+}
+
 /// Deletes a key from Redis
 /// 
 /// Returns "true" if the key was successfully deleted

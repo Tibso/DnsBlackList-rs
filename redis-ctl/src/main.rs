@@ -104,17 +104,17 @@ fn main() -> ExitCode {
             => functions::drop_matchclasses(
                 connection, pattern.to_owned()
             ),
-        Commands::Feed {path_to_list, matchclass}
+        Commands::Feed {path_to_list, matchclass_type, matchclass_id}
             => functions::feed_matchclass(
-                connection, confile.daemon_id, path_to_list.to_owned(), matchclass.to_owned()
+                connection, confile.daemon_id, path_to_list.to_owned(), matchclass_type.to_owned(), matchclass_id.to_owned()
             ),
-        Commands::SetRule {rule, qtype, ip}
+        Commands::SetRule {matchclass_type, matchclass_id, domain, qtype, ip}
             => functions::set_rule(
-                connection, confile.daemon_id, rule.to_owned(), qtype.to_owned(), ip.to_owned()
+                connection, confile.daemon_id, matchclass_type.to_owned(), matchclass_id.to_owned(), domain.to_owned(), qtype.to_owned(), ip.to_owned()
             ),
-        Commands::DelRule {rule, qtype}
+        Commands::DelRule {matchclass_type, matchclass_id, domain, date, qtype}
             => functions::delete_rule(
-                connection, rule.to_owned(), qtype.to_owned()
+                connection, matchclass_type.to_owned(), matchclass_id.to_owned(), domain.to_owned(), date.to_owned(), qtype.to_owned()
             )
     };
 
