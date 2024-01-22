@@ -3,39 +3,42 @@ use std::{
     io,
     time::SystemTimeError
 };
-use serde::{Serialize, Deserialize};
+
+
+use serde::Deserialize;
 
 use redis::RedisError;
 
+use hickory_proto::error::ProtoError;
 use hickory_resolver::error::ResolveError;
 
 pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 /// The configuration file structure
 pub struct Confile {
     pub daemon_id: String,
     pub redis_address: String
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 /// The configuration structure
 pub struct Config { 
     pub forwarders: Vec<SocketAddr>,
     pub binds: Vec<String>,
     pub is_filtering: bool,
-    pub matchclasses: Option<Vec<String>>,
-    pub blackhole_ips: Option<(Ipv4Addr, Ipv6Addr)>
+    pub filters: Option<Vec<String>>,
+    pub blackholes: Option<(Ipv4Addr, Ipv6Addr)>
 }
 impl Default for Config {
     /// Initializes the configuration structure with its default values
     fn default() -> Self {
-        Config {
+        Self {
             forwarders: vec![],
             binds : vec![],
             is_filtering: false,
-            matchclasses: None,
-            blackhole_ips: None
+            filters: None,
+            blackholes: None
         }
     }
 }
@@ -46,9 +49,9 @@ pub struct DnsBlrsError {
     kind: DnsBlrsErrorKind
 }
 impl DnsBlrsError {
-    // Links the error types to the error structure
-    pub fn kind(&self) -> &DnsBlrsErrorKind {
-        &self.kind
+    /// Links the error types to the error structure
+    pub fn kind(self) -> DnsBlrsErrorKind {
+        self.kind
     }
 }
 impl From<DnsBlrsErrorKind> for DnsBlrsError {
@@ -58,18 +61,43 @@ impl From<DnsBlrsErrorKind> for DnsBlrsError {
     }
 }
 
+impl From<RedisError> for DnsBlrsError {
+    fn from(err: RedisError) -> Self {
+        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Redis(err))}
+    }
+}
+impl From<SystemTimeError> for DnsBlrsError {
+    fn from(err: SystemTimeError) -> Self {
+        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::SystemTime(err))}
+    }
+}
+impl From<ResolveError> for DnsBlrsError {
+    fn from(err: ResolveError) -> Self {
+        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))}
+    }
+}
+impl From<ProtoError> for DnsBlrsError {
+    fn from(err: ProtoError) -> Self {
+        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))}
+    }
+}
+impl From<io::Error> for DnsBlrsError {
+    fn from(err: io::Error) -> Self {
+        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))}
+    }
+}
+
 #[derive(Debug)]
-/// The custom error types
+/// Custom error type
 pub enum DnsBlrsErrorKind {
     InvalidOpCode,
     InvalidMessageType,
-    InvalidArpaAddress,
     InvalidRule,
     NotImpl,
-    SetupBindingError,
-    BuildManagerError,
-    BuildConfigError,
+    SetupBinding,
+    BuildConfig,
     RequestRefused,
+    LogicError,
     // This custom error type wraps the external crates errors
     // to enable proper error propagation
     ExternCrateError(ExternCrateErrorKind),
@@ -78,8 +106,9 @@ pub enum DnsBlrsErrorKind {
 #[derive(Debug)]
 /// The errors from external crates
 pub enum ExternCrateErrorKind {
-    RedisError(RedisError),
-    IOError(io::Error),
-    ResolverError(ResolveError),
-    SystemTimeError(SystemTimeError)
+    Redis(RedisError),
+    IO(io::Error),
+    Resolver(ResolveError),
+    SystemTime(SystemTimeError),
+    Proto(ProtoError)
 }

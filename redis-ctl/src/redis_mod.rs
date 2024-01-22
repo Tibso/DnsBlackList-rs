@@ -1,151 +1,82 @@
-use redis::{Cmd, from_redis_value, ConnectionLike, Connection, RedisResult};
+use redis::{Connection, RedisResult, cmd};
 
-/// Sets a value of a field in a hash in Redis
+use crate::redis_mod;
+
+/// Executes a command to Redis
 /// 
-/// Returns "true" if the field was successfully added
-pub fn hset (
-    connection: &mut Connection,
-    hash: String,
-    key: &str,
-    value: String
-)
--> RedisResult<bool> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("hset")
-        .arg(hash)
-        .arg(key)
-        .arg(value))?;
-    let result = from_redis_value(&ser_value)?;
-
-    Ok(result)
-}
-
-/// Sets multiple values and fields of a hash in Redis
-/// 
-/// Returns "true" if the fields were successfully added
-pub fn hmset (
-    connection: &mut Connection,
-    hash: String,
-    key_1: &str,
-    value_1: String,
-    key_2: &str,
-    value_2: String
-)
--> RedisResult<bool> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("hset")
-        .arg(hash)
-        .arg(key_1)
-        .arg(value_1)
-        .arg(key_2)
-        .arg(value_2))?;
-    let result = from_redis_value(&ser_value)?;
-
-    Ok(result)
-}
-
-/// Deletes a key from Redis
-/// 
-/// Returns "true" if the key was successfully deleted
-pub fn del (
-    connection: &mut Connection,
-    key: String
-)
--> RedisResult<bool> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("del")
-        .arg(key))?;
-    let result = from_redis_value(&ser_value)?;
-
-    Ok(result)
-}
-
-/// Deletes keys from Redis using a vector of keys as input
-/// 
-/// Returns the number of keys that were deleted
-pub fn del_vec (
-    connection: &mut Connection,
-    keys: Vec<String>
-)
--> RedisResult<usize> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("del")
-        .arg(keys))?;
-    let del_count = from_redis_value(&ser_value)?;
-
-    Ok(del_count)
-}
-
-/// Deletes the field of a hash from Redis
-/// 
-/// Returns "true" if the field was successfully deleted
-pub fn hdel (
-    connection: &mut Connection,
-    hash: String,
-    field: &str
-)
--> RedisResult<bool> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("hdel")
-        .arg(hash)
-        .arg(field))?;
-    let result = from_redis_value(&ser_value)?;
-
-    Ok(result)
-}
-
-/// Fetches all the elements of a key from Redis
-/// 
-/// This functions encompasses the commands "keys", "hgetall" and "smembers"
-/// as this function works for regular keys, hashes and sets
-/// 
-/// Returns a vector of the elements
-pub fn get_elements (
+/// Retrieve the amount of items that were successfully manipulated
+pub fn exec (
     connection: &mut Connection,
     command: &str,
-    key: String
+    args: &Vec<String>
+)
+-> RedisResult<u32> {
+    cmd(command).arg(args).query(connection)
+}
+
+/// Fetches items from Redis
+/// 
+/// Returns a vector of the items
+pub fn fetch (
+    connection: &mut Connection,
+    command: &str,
+    args: &Vec<String>
 )
 -> RedisResult<Vec<String>> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg(command)
-        .arg(key))?;
-    let deser_value = from_redis_value(&ser_value)?;
-
-    Ok(deser_value)
+    cmd(command).arg(args).query(connection)
 }
 
-/// Adds a vector of members to a set in Redis
+/// Copies keys from Redis
 /// 
-/// Returns the number of members that were added to the set
-pub fn sadd_vec (
+/// Returns a tuple containing the cursor then the keys
+pub fn scan (
     connection: &mut Connection,
-    set: String,
-    members: Vec<String>
+    cursor: u32,
+    pattern: &str
 )
--> RedisResult<usize> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("sadd")
-        .arg(set)
-        .arg(members))?;
-    let add_count = from_redis_value(&ser_value)?;
-
-    Ok(add_count)
+-> RedisResult<(u32, Vec<String>)> {
+    cmd("scan")
+        .arg(cursor)
+        .arg("count").arg(10000)
+        .arg("match").arg(pattern)
+        .query(connection)
 }
 
-/// Adds a member to a set in Redis
+/// Retrieves keys from Redis in a non-blocking fashion
+pub fn get_keys (
+    connection: &mut Connection,
+    pattern: &str
+)
+-> RedisResult<Vec<String>> {
+    let mut retrieved_keys: Vec<String> = vec![];
+    let mut cursor = 0u32;
+    loop {
+        let keys: Vec<String>;
+        (cursor, keys) = redis_mod::scan(connection, cursor, pattern)?;
+        if cursor == 0 {
+            break
+        }
+        if keys.is_empty() {
+            continue
+        }
+
+        for key in keys {
+            retrieved_keys.push(key);
+        }
+    }
+
+    Ok(retrieved_keys)
+}
+
+/* 
+/// Fetches the type of a key in Redis
 /// 
-/// Returns "true" if the member was successfully added to the set
-pub fn sadd (
+/// Returns the type as String
+pub fn get_type (
     connection: &mut Connection,
-    set: String,
-    member: String
+    key: &str
 )
--> RedisResult<bool> {
-    let ser_value = connection.req_command(Cmd::new()
-        .arg("sadd")
-        .arg(set)
-        .arg(member))?;
-    let result = from_redis_value(&ser_value)?;
-
-    Ok(result)
+-> RedisResult<String> {
+    cmd("type").arg(key).query(connection)
 }
+*/

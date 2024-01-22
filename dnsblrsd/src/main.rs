@@ -1,6 +1,25 @@
 // This flag ensures any unsafe code will induce a compiler error 
 #![forbid(unsafe_code)]
 
+use tokio::net::{TcpListener, UdpSocket};
+use arc_swap::ArcSwap;
+use tracing::{info, error, warn};
+use signal_hook_tokio::Signals;
+use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
+use futures_util::stream::StreamExt;
+use lazy_static::lazy_static;
+
+use hickory_resolver::TokioAsyncResolver;
+use hickory_server::ServerFuture;
+
+use redis::aio::ConnectionManager;
+
+use std::{
+    time::Duration, fs, sync::Arc,
+    process::{ExitCode, exit},
+    net::{IpAddr, SocketAddr}
+};
+
 mod handler;
 mod redis_mod;
 mod resolver;
@@ -12,24 +31,6 @@ use crate::{
     structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind},
     redis_mod::smembers
 };
-
-use hickory_resolver::TokioAsyncResolver;
-use hickory_server::ServerFuture;
-
-use redis::aio::ConnectionManager;
-
-use tokio::net::{TcpListener, UdpSocket};
-use arc_swap::ArcSwap;
-use std::{
-    time::Duration, fs, sync::Arc,
-    process::{ExitCode, exit},
-    net::{IpAddr, SocketAddr}
-};
-use tracing::{info, error, warn};
-use signal_hook_tokio::Signals;
-use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
-use futures_util::stream::StreamExt;
-use lazy_static::lazy_static;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -47,16 +48,16 @@ fn read_confile (
         let data = match fs::read_to_string(file_name) {
             Ok(ok) => ok,
             Err(err) => {
-                println!("Error reading config file: {}", err);
+                error!("Error reading \"dnsblrsd\": {err}");
                 // CONFIG exitcode
                 exit(78)
             }
         };
-        // Deserializes the JSON String
+
         match serde_json::from_str(&data) {
             Ok(ok) => ok,
             Err(err) => {
-                println!("Error deserializing config file data: {}", err);
+                error!("Error deserializing \"dnsblrsd.conf\" data: {err}");
                 // CONFIG exitcode
                 exit(78)
             }
@@ -79,48 +80,46 @@ async fn build_config (
     // The configuration is retrieved from Redis
     // If an error occurs, the server will not filter
     
-    // Attempts to fetch the blackhole_ips from Redis
-    match smembers(redis_manager, format!("dnsblrsd:blackhole_ips:{}", CONFILE.daemon_id)).await {
-        Err(err) => warn!("{}: Error retrieving retrieve blackhole_ips: {:?}", CONFILE.daemon_id, err),
-        Ok(tmp_blackhole_ips) => {
-            // If we haven't received exactly 2 blackhole_ips, there is an issue with the configuration
-            if tmp_blackhole_ips.len() != 2 {
-                warn!("{}: Amount of blackhole_ips received were not 2 (must have v4 and v6)", CONFILE.daemon_id);
+    match smembers(redis_manager, format!("DBL:blackholes:{}", CONFILE.daemon_id).as_str()).await {
+        Err(err) => warn!("{}: Error retrieving retrieve blackholes: {err:?}", CONFILE.daemon_id),
+        Ok(tmp_blackholes) => {
+            // If we haven't received exactly 2 blackholes, there is an issue with the configuration
+            if tmp_blackholes.len() != 2 {
+                warn!("{}: Amount of blackholes received were not 2 (must have v4 and v6)", CONFILE.daemon_id);
             } else {
-                let mut tmp_blackhole_ips = tmp_blackhole_ips.iter();
+                let mut tmp_blackholes = tmp_blackholes.iter();
 
-                match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
-                    Err(err) => warn!("{}: Error parsing first blackhole IP: {:?}", CONFILE.daemon_id, err),
+                match tmp_blackholes.next().unwrap().parse::<IpAddr>() {
+                    Err(err) => warn!("{}: Error parsing first blackhole IP: {err:?}", CONFILE.daemon_id),
                     Ok(ip1) => {
-                        match tmp_blackhole_ips.next().unwrap().parse::<IpAddr>() {
-                            Err(err) => warn!("{}: Error parsing second blackhole IP: {:?}", CONFILE.daemon_id, err),
+                        match tmp_blackholes.next().unwrap().parse::<IpAddr>() {
+                            Err(err) => warn!("{}: Error parsing second blackhole IP: {err:?}", CONFILE.daemon_id),
                             Ok(ip2) => {
                                 // There must be one IPv4 and one IPv6
                                 match (ip1, ip2) {
                                     | (IpAddr::V4(ipv4), IpAddr::V6(ipv6))
                                     | (IpAddr::V6(ipv6), IpAddr::V4(ipv4))
                                     => {
-                                        info!("{}: Blackhole_ips received are valid", CONFILE.daemon_id);
+                                        info!("{}: Blackholes received are valid", CONFILE.daemon_id);
 
-                                        // Fetches the matchclasses from Redis
-                                        match smembers(redis_manager, format!("dnsblrsd:matchclasses:{}", CONFILE.daemon_id)).await {
-                                            Err(err) => warn!("{}: Error retrieving matchclasses: {:?}", CONFILE.daemon_id, err),
-                                            Ok(tmp_matchclasses) => {
-                                                let matchclasses_count = tmp_matchclasses.len();
-                                                if matchclasses_count == 0 {
-                                                    warn!("{}: No matchclass received", CONFILE.daemon_id);
+                                        match smembers(redis_manager, format!("DBL:filters:{}", CONFILE.daemon_id).as_str()).await {
+                                            Err(err) => warn!("{}: Error retrieving filters: {err:?}", CONFILE.daemon_id),
+                                            Ok(tmp_filters) => {
+                                                let filters_count = tmp_filters.len();
+                                                if filters_count == 0 {
+                                                    warn!("{}: No filter received", CONFILE.daemon_id);
                                                 } else {
                                                     // If at least 1 matchclass is received, the server will filter the requests
-                                                    config.blackhole_ips = Some((ipv4, ipv6));
+                                                    config.blackholes = Some((ipv4, ipv6));
                                                     config.is_filtering = true;
-                                                    config.matchclasses = Some(tmp_matchclasses);
+                                                    config.filters = Some(tmp_filters);
 
-                                                    info!("{}: Received {} matchclasses", CONFILE.daemon_id, matchclasses_count)
+                                                    info!("{}: Received {filters_count} filters", CONFILE.daemon_id);
                                                 }
                                             }
                                         }
                                     },
-                                    _ => warn!("The \"blackhole_ips\" are not properly configured, there must be one IPv4 and one IPv6"),
+                                    _ => warn!("The blackholes are not properly configured, there must be one IPv4 and one IPv6"),
                                 }
                             }
                         }
@@ -131,70 +130,67 @@ async fn build_config (
     }
 
     if !config.is_filtering {
-        warn!("{}: The server will not filter any request and so will not lie", CONFILE.daemon_id)
+        warn!("{}: The server will not filter any request because of misconfiguration", CONFILE.daemon_id);
     }
 
     // If an error occurs beyond here, we return the error
     // because the server cannot start without these next values
 
-    // Attempts to fetch the forwarders' sockets from Redis
-    match smembers(redis_manager, format!("dnsblrsd:forwarders:{}", CONFILE.daemon_id)).await {
-        Err(err) => {
-            error!("{}: Error retrieving forwarders: {:?}", CONFILE.daemon_id, err);
-            return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
-        },
-        Ok(tmp_forwarders) => {
-            let forwarders_count = tmp_forwarders.len();
-            // If no forwarder is received, the server cannot start
-            if forwarders_count == 0 {
-                error!("{}: No forwarder was received", CONFILE.daemon_id);
-                return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
+    let tmp_forwarders = smembers(redis_manager, format!("DBL:forwarders:{}", CONFILE.daemon_id).as_str()).await
+        .map_err(|err| {
+            error!("{}: Error retrieving forwarders: {err:?}", CONFILE.daemon_id);
+            DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
+        })?;
+    let forwarders_count = u16::try_from(tmp_forwarders.len())
+        .map_err(|err| {
+            error!("{}: Unexpected integer value: {err}", CONFILE.daemon_id);
+            DnsBlrsError::from(DnsBlrsErrorKind::LogicError)
+        })?;
+    // If no forwarder is received, the server cannot start
+    if forwarders_count == 0 {
+        error!("{}: No forwarder was received!", CONFILE.daemon_id);
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
+    }
+    info!("{}: Received {forwarders_count} forwarders", CONFILE.daemon_id);
+
+    // The forwarders' sockets are parsed to validate them
+    let mut valid_forwarder_count = 0u16;
+    for forwarder in tmp_forwarders {
+        config.forwarders.push(
+            match forwarder.parse::<SocketAddr>() {
+                Ok(ok) => ok,
+                Err(err) => {
+                    warn!("{}: forwarder: {forwarder} is not valid: {err:?}", CONFILE.daemon_id);
+                    continue
+                }
             }
-            info!("{}: Received {} forwarders", CONFILE.daemon_id, forwarders_count);
-        
-            // The forwarders' sockets are parsed to validate them
-            let mut valid_forwarder_count = 0usize;
-            for forwarder in tmp_forwarders {
-                config.forwarders.push(
-                    match forwarder.parse::<SocketAddr>() {
-                        Ok(ok) => ok,
-                        Err(err) => {
-                            warn!("{}: forwarder: {} is not valid: {:?}", CONFILE.daemon_id, forwarder, err);
-                            continue
-                        }
-                    }
-                );
-                valid_forwarder_count += 1
-            }
-            // At least 1 forwarder socket must be valid
-            if valid_forwarder_count == forwarders_count {
-                info!("{}: All {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count)
-            } else if valid_forwarder_count == 0 {
-                error!("{}: No forwarder is valid", CONFILE.daemon_id);
-                return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
-            } else if valid_forwarder_count < forwarders_count {
-                warn!("{}: {} out of {} forwarders are valid", CONFILE.daemon_id, valid_forwarder_count, forwarders_count)
-            }
-        }
+        );
+        valid_forwarder_count += 1;
+    }
+    // At least 1 forwarder socket must be valid
+    if valid_forwarder_count == forwarders_count {
+        info!("{}: All {valid_forwarder_count} forwarders are valid", CONFILE.daemon_id);
+    } else if valid_forwarder_count == 0 {
+        error!("{}: No forwarder is valid!", CONFILE.daemon_id);
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
+    } else {
+        warn!("{}: {valid_forwarder_count} out of {forwarders_count} forwarders are valid", CONFILE.daemon_id);
     }
 
-    // Attempts to fetch the binds from Redis
-    match smembers(redis_manager, format!("dnsblrsd:binds:{}", CONFILE.daemon_id)).await {
-        Err(err) => {
-            error!("{}: Error retrieving binds: {:?}", CONFILE.daemon_id, err);
-            return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
-        },
-        Ok(binds) => {
-            let bind_count = binds.len();
-            if bind_count == 0 {
-                error!("{}: No bind received", CONFILE.daemon_id);
-                return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfigError))
-            }
-            config.binds = binds;
+    let binds = smembers(redis_manager, format!("DBL:binds:{}", CONFILE.daemon_id).as_str()).await
+        .map_err(|err| {
+            error!("{}: Error retrieving binds: {err:?}", CONFILE.daemon_id);
+            DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
+        })?;
 
-            info!("{}: Received {} binds", CONFILE.daemon_id, bind_count);
-        }
+    let bind_count = binds.len();
+    if bind_count == 0 {
+        error!("{}: No bind received!", CONFILE.daemon_id);
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
     }
+    config.binds = binds;
+
+    info!("{}: Received {bind_count} binds", CONFILE.daemon_id);
 
     Ok(config)
 }
@@ -205,56 +201,51 @@ async fn setup_binds (
     config: &Config
 )
 -> DnsBlrsResult<()> {
-    let bind_count = config.binds.len();
-    let mut successful_binds_count = 0usize;
+    let bind_count = u32::try_from(config.binds.len())
+        .map_err(|_| DnsBlrsError::from(DnsBlrsErrorKind::LogicError))?;
+    let mut successful_binds_count = 0u32;
 
     for bind in &config.binds {
         let mut splits = bind.split('=');
 
         match splits.next() {
             Some("UDP") => {
-                let bind = match splits.next() {
-                    Some(bind) => bind,
-                    None => {
-                        warn!("{}: Failed to read bind: \"{}\"", CONFILE.daemon_id, bind);
-                        continue
-                    }
+                let Some(bind) = splits.next() else {
+                    warn!("{}: Failed to read bind: \"{bind}\"", CONFILE.daemon_id);
+                    continue
                 };
                 let Ok(socket) = UdpSocket::bind(bind).await else {
-                    warn!("{}: Failed to bind: \"{}\"", CONFILE.daemon_id, bind);
+                    warn!("{}: Failed to bind: \"{bind}\"", CONFILE.daemon_id);
                     continue
                 };
-                server.register_socket(socket)
+                server.register_socket(socket);
             },
             Some("TCP") => {
-                let bind = match splits.next() {
-                    Some(bind) => bind,
-                    None => {
-                        warn!("{}: Failed to read bind: \"{}\"", CONFILE.daemon_id, bind);
-                        continue
-                    }
-                };
-                let Ok(listener) = TcpListener::bind(bind).await else {
-                    warn!("{}: Failed to bind: \"{}\"", CONFILE.daemon_id, bind);
+                let Some(bind) = splits.next() else {
+                    warn!("{}: Failed to read bind: \"{bind}\"", CONFILE.daemon_id);
                     continue
                 };
-                server.register_listener(listener, TCP_TIMEOUT)
+                let Ok(listener) = TcpListener::bind(bind).await else {
+                    warn!("{}: Failed to bind: \"{bind}\"", CONFILE.daemon_id);
+                    continue
+                };
+                server.register_listener(listener, TCP_TIMEOUT);
             },
             _ => {
-                warn!("{}: Failed to bind: \"{}\"", CONFILE.daemon_id, bind);
+                warn!("{}: Failed to bind: \"{bind}\"", CONFILE.daemon_id);
                 continue
             }
         };
-        successful_binds_count += 1
+        successful_binds_count += 1;
     }
     // At least 1 bind must be set
     if successful_binds_count == bind_count {
-        info!("{}: All {} binds were set", CONFILE.daemon_id, successful_binds_count)
+        info!("{}: All {successful_binds_count} binds were set", CONFILE.daemon_id);
     } else if successful_binds_count == 0 {
         error!("{}: No bind was set", CONFILE.daemon_id);
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBindingError))
-    } else if successful_binds_count < bind_count {
-        warn!("{}: {} out of {} total binds were set", CONFILE.daemon_id, successful_binds_count, bind_count)
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBinding))
+    } else {
+        warn!("{}: {successful_binds_count} out of {bind_count} total binds were set", CONFILE.daemon_id);
     }
 
     Ok(())
@@ -275,7 +266,7 @@ async fn handle_signals (
                 info!("Captured SIGHUP");
 
                 let Ok(new_config) = build_config(&mut redis_manager).await else {
-                    error!("Could not rebuild the config");
+                    error!("{}: Could not rebuild the config!", CONFILE.daemon_id);
                     continue
                 };
 
@@ -283,7 +274,7 @@ async fn handle_signals (
                 let new_config =  Arc::new(new_config);
                 arc_config.store(new_config);
 
-                info!("Config was rebuilt")
+                info!("Config was rebuilt");
             },
             // Receiving a SIGUSR1 signal switches ON/OFF the server's filtering
             SIGUSR1 => {
@@ -295,9 +286,9 @@ async fn handle_signals (
                 config.is_filtering = !config.is_filtering;
 
                 if config.is_filtering {
-                    info!("The server is now filtering")
+                    info!("The server is now filtering");
                 } else {
-                    info!("The server is not filtering anymore")
+                    info!("The server is not filtering anymore");
                 }
             
                 // Stores the modified configuration back into the thread-safe variable
@@ -308,9 +299,9 @@ async fn handle_signals (
                 info!("Captured SIGUSR2");
 
                 arc_resolver.clear_cache();
-                info!("The resolver's cache was cleared")
+                info!("The resolver's cache was cleared");
             },
-            _ => unreachable!()
+            _ => error!("{}: Unexpected signal handled!", CONFILE.daemon_id)
         }
     }
 }
@@ -325,7 +316,6 @@ async fn main()
         .without_time();
     tracing_subscriber::fmt().event_format(tracing_format).init();
 
-    // Prepares the signals handler
     let Ok(signals) = Signals::new([SIGHUP, SIGUSR1, SIGUSR2]) else {
         error!("{}: Could not create signal stream", CONFILE.daemon_id);
         // OSERR exitcode
@@ -333,26 +323,22 @@ async fn main()
     };
     let signals_handler = signals.handle();
 
-    let mut redis_manager = match redis_mod::build_manager().await {
-        Ok(ok) => ok,
-        Err(_) => {
+    let Ok(mut redis_manager) = redis_mod::build_manager().await else {
             error!("{}: An error occured while building the Redis connection manager", CONFILE.daemon_id);
             // UNAVAILABLE exitcode
             return ExitCode::from(69)
-        }
-    };
+        };
+
     let config = match build_config(&mut redis_manager).await {
         Ok(ok) => ok,
         Err(err) => {
-            error!("{}: An error occured while building server configuration: {:?}", CONFILE.daemon_id, err);
+            error!("{}: An error occured while building server configuration: {err:?}", CONFILE.daemon_id);
             // CONFIG exitcode
             return ExitCode::from(78)
         }
     };
     
-    // Builds the resolver
-    let resolver = resolver::build_resolver(&config);
-    // The resolver is stored into a thread-safe variable
+    let resolver = resolver::build(&config);
     let arc_resolver = Arc::new(resolver);
 
     info!("{}: Initializing server...", CONFILE.daemon_id);
@@ -363,24 +349,24 @@ async fn main()
 
     // This variable is stored into another thread-safe container and is given to each thread
     let handler = Handler {
-        redis_manager: redis_manager.clone(), arc_config: Arc::clone(&arc_config), arc_resolver: Arc::clone(&arc_resolver)
+        redis_manager: redis_manager.clone(),
+        arc_config: Arc::clone(&arc_config),
+        arc_resolver: Arc::clone(&arc_resolver)
     };
     
-    // Spawns a task thread that handles the signals
     let signals_task = tokio::task::spawn(handle_signals(signals, Arc::clone(&arc_config), Arc::clone(&arc_resolver), redis_manager));
 
     let mut server = ServerFuture::new(handler);
 
     if let Err(err) = setup_binds(&mut server, &config).await {
-        error!("An error occured while setting up binds: {:?}", err);
+        error!("An error occured while setting up binds: {err:?}");
         // OSERR exitcode
         return ExitCode::from(71)
     };
 
     info!("{}: Server started", CONFILE.daemon_id);
-    // Drives the server to completion (indefinite)
     if let Err(err) = server.block_until_done().await {
-        error!("An error occured when running server future to completion: {:?}", err);
+        error!("An error occured when running server future to completion: {err:?}");
         // SOFTWARE exitcode
         return ExitCode::from(70)
     };
@@ -389,9 +375,8 @@ async fn main()
     // Need to add a graceful shutdown
 
     signals_handler.close();
-    // Signals' task is driven to completion
     if let Err(err) = signals_task.await {
-        error!("An error occured when running signals future to completion: {:?}", err);
+        error!("An error occured when running signals future to completion: {err:?}");
         // SOFTWARE exitcode
         return ExitCode::from(70)
     };

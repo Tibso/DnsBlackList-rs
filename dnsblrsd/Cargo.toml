@@ -7,19 +7,29 @@ edition = "2021"
 
 [dependencies]
 arc-swap = "1.6.0"
-async-trait = "0.1.74"
-futures-util = "0.3.29"
+async-trait = "0.1.75"
+futures-util = "0.3.30"
 hickory-client = "0.24.0"
 hickory-proto = "0.24.0"
 hickory-resolver = "0.24.0"
 hickory-server = "0.24.0"
 lazy_static = "1.4.0"
-redis = {version = "0.23", features = ["aio", "tokio-comp", "connection-manager"]}
-serde = {version = "1.0.190", features = ["derive"]}
-serde_json = {version = "1.0.108", features = ["std"]}
+redis = {version = "0.24.0", features = ["aio", "tokio-comp", "connection-manager"]}
+serde = {version = "1.0.194", features = ["derive"]}
+serde_json = {version = "1.0.111", features = ["std"]}
 signal-hook = "0.3.17"
 signal-hook-tokio = {version = "0.3.1", features = ["futures-v0_3"]}
-smallvec = "1.11.1"
-tokio = {version = "1.33.0", features = ["macros", "rt-multi-thread"]}
+tokio = {version = "1.35.1", features = ["macros", "rt-multi-thread"]}
 tracing = "0.1.40"
-tracing-subscriber = "0.3.17"
+tracing-subscriber = "0.3.18"
+
+[lints.clippy]
+pedantic = "warn"
+nursery = "warn"
+#perf = "warn"
+#complexity = "warn"
+#suspicious = "warn"
+#correctness = "warn"
+all = "warn"
+cargo = "warn"
+str_to_string = "warn"

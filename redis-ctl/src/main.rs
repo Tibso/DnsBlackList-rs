@@ -1,12 +1,17 @@
 mod commands;
-mod functions;
+mod modules;
 mod redis_mod;
 
-use crate::commands::{Cli, Commands, Subcommands};
+use crate::{
+    commands::{Cli, Commands, Subcommands},
+    modules::{conf, feed, stats, rules}
+};
+
+//use modules::backup;
+use redis::Client;
 
 use std::{fs, process::ExitCode};
 use clap::Parser;
-use redis::Client;
 use serde::{Serialize, Deserialize};
 
 /// The configuration file structure
@@ -25,7 +30,7 @@ fn main() -> ExitCode {
         let tmp_string = match fs::read_to_string(&cli.path_to_confile) {
             Ok(ok) => ok,
             Err(err) => {
-                println!("Error reading file from: {:?}: {:?}", cli.path_to_confile, err);
+                println!("Error reading file from: {:?}: {err}", cli.path_to_confile, );
                 // CONFIG exitcode on error
                 return ExitCode::from(78)
             }
@@ -33,7 +38,7 @@ fn main() -> ExitCode {
         match serde_json::from_str(&tmp_string) {
             Ok(ok) => ok,
             Err(err) => {
-                println!("Error deserializing config file data: {:?}", err);
+                println!("Error deserializing config file data: {err}", );
                 // CONFIG exitcode on error
                 return ExitCode::from(78)
             }
@@ -44,7 +49,7 @@ fn main() -> ExitCode {
     let client = match Client::open(format!("redis://{}/", confile.redis_address)) {
         Ok(ok) => ok,
         Err(err) => {
-            println!("Error probing the Redis server: {:?}", err);
+            println!("Error probing the Redis server: {err}", );
             // NOHOST exitcode on error
             return ExitCode::from(68)
         }
@@ -52,7 +57,7 @@ fn main() -> ExitCode {
     let connection = match client.get_connection() {
         Ok(ok) => ok,
         Err(err) => {
-            println!("Error creating the connection: {:?}", err);
+            println!("Error creating the connection: {err}", );
             // UNAVAILABLE exitcode on error
             return ExitCode::from(69) // NICE
         }
@@ -62,65 +67,68 @@ fn main() -> ExitCode {
     // Each element of the "Commands" enum calls its own function
     let result = match &cli.command {
         Commands::ShowConf {}
-            => functions::show_conf(
-                connection, confile
-            ),
+            => conf::show(connection, &confile),
+
         Commands::EditConf (subcommand)
             => match subcommand {
                 Subcommands::AddBinds {binds}
-                    => functions::add_binds(
-                        connection, confile.daemon_id, binds.to_owned()
-                    ),
+                    => conf::add_binds(connection, &confile.daemon_id, binds.to_owned()),
+
                 Subcommands::ClearParam {parameter}
-                    => functions::clear_parameter(
-                        connection, confile.daemon_id, parameter.to_owned()
-                    ),
-                Subcommands::Forwarders {forwarders}
-                    => functions::set_forwarders(
-                        connection, confile.daemon_id, forwarders.to_owned()
-                    ),
-                Subcommands::BlackholeIps {blackhole_ips}
-                    => functions::set_blackhole_ips(
-                        connection, confile.daemon_id, blackhole_ips.to_owned()
-                    ),
-                Subcommands::BlockIps {blocked_ips}
-                    => functions::add_blocked_ips(
-                        connection, confile.daemon_id, blocked_ips.to_owned()
-                    )
+                    => conf::clear_parameter(connection, &confile.daemon_id, parameter),
+
+                Subcommands::AddForwarders {forwarders}
+                    => conf::add_forwarders(connection, &confile.daemon_id, forwarders.to_owned()),
+
+                Subcommands::Blackholes {blackhole_ips}
+                    => conf::set_blackholes(connection, &confile.daemon_id, blackhole_ips.to_owned()),
+
+                Subcommands::AddBlockedIps {blocked_ips}
+                    => conf::add_blocked_ips(connection, &confile.daemon_id, blocked_ips.to_owned()),
+
+                Subcommands::AddFilters {filters}
+                    => conf::add_filters(connection, &confile.daemon_id, filters.to_owned()),
+
+                Subcommands::RemoveFilters {filters}
+                    => conf::remove_filters(connection, &confile.daemon_id, filters.to_owned())
             },
+
         Commands::ClearStats {pattern}
-            => functions::clear_stats(
-                connection, confile.daemon_id, pattern.to_owned()
-            ),
+            => stats::clear(connection, pattern),
+
         Commands::ShowStats {pattern}
-            => functions::get_stats(
-                connection, confile.daemon_id, pattern.to_owned()
-            ),
-        Commands::GetInfo {matchclass}
-            => functions::get_info(
-                connection, matchclass.to_owned()
-            ),
-        Commands::Drop {pattern}
-            => functions::drop_matchclasses(
-                connection, pattern.to_owned()
-            ),
-        Commands::Feed {path_to_list, matchclass_type, matchclass_id}
-            => functions::feed_matchclass(
-                connection, confile.daemon_id, path_to_list.to_owned(), matchclass_type.to_owned(), matchclass_id.to_owned()
-            ),
-        Commands::SetRule {matchclass_type, matchclass_id, domain, qtype, ip}
-            => functions::set_rule(
-                connection, confile.daemon_id, matchclass_type.to_owned(), matchclass_id.to_owned(), domain.to_owned(), qtype.to_owned(), ip.to_owned()
-            ),
-        Commands::DelRule {matchclass_type, matchclass_id, domain, date, qtype}
-            => functions::delete_rule(
-                connection, matchclass_type.to_owned(), matchclass_id.to_owned(), domain.to_owned(), date.to_owned(), qtype.to_owned()
-            )
+            => stats::show(connection, pattern),
+
+        Commands::SearchRule {filter, domain}
+            => rules::search(connection, filter, domain),
+
+        Commands::DisableRules {pattern}
+            => rules::disable(connection, pattern),
+
+        Commands::EnableRules {pattern}
+            => rules::enable(connection, pattern),
+
+        Commands::AutoFeed {path_to_sources}
+            => feed::auto(connection, path_to_sources.to_owned()),
+
+        Commands::Feed {path_to_list, filter, source}
+            => feed::add_to_filter(connection, path_to_list, filter, source),
+
+        Commands::SetRule {filter, source, domain, ips}
+            => rules::set(connection, filter, source, domain, ips.to_owned()),
+
+        Commands::DelRule {filter, domain, ip}
+            => rules::delete(connection, filter, domain, ip.to_owned()),
+        
+//       Commands::BackupFull {path_to_backup}
+//            => backup::create_full(connection, path_to_backup)
     };
 
     match result {
         Ok(exitcode) => exitcode,
-        // Converts errors to UNAVAILABLE exitcode
-        Err(_) => ExitCode::from(69)
+        Err(err) => {
+            println!("{err}");
+            ExitCode::from(1)
+        }
     }
 }

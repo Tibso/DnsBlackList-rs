@@ -2,16 +2,16 @@
 
 # **DnsBlackList-rs**
 
-DNS forwarder with custom rules using [Trust-DNS](https://github.com/bluejekyll/trust-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
+DNS resolver with custom rules using [Hickory DNS](https://github.com/hickory-dns/hickory-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 
-This DNS forwarder **filters queries** using a **blacklist** from a Redis database. The forwarder **lies** to DNS requests asking for **domains** that are known as **dangerous or unwanted** to **protect** its **users** from them.
+This DNS resolver **filters queries** using a **blacklist** from a Redis database. The resolver **lies** to DNS requests asking for **domains** that are known as **dangerous or unwanted** to **protect** its **users** from them.
 
 # **Repository composition**
 
 | Directory | Description |
 |--------|-------------|
-| *dnsblrsd* | Contains the forwarder's daemon source code and its configuration |
-| *redis-ctl* | Contains the source code of the tool used to modify the blacklist stored in the Redis database |
+| *dnsblrsd* | Contains the resolver's daemon source code and its configuration |
+| *redis-ctl* | Contains the source code of the tool used to modify the blacklist and the daemons configurations stored in the Redis database |
 
 # **Goals**
 
@@ -21,25 +21,21 @@ This DNS forwarder **filters queries** using a **blacklist** from a Redis databa
 
 + **Safe Rust only**
 
-+ [TBD] *Optimized for improved resilience against DDoS*
-
 # **Supported systems**
 
 + **Unix / Linux**
 
-+ [TBA] *Windows*
-
-# **forwarder**
+# **Resolver**
 
 ## **How does it work?**
 
-Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the forwarder to handle a much heavier load than a single-threaded solution could.
+Upon receiving a request, a **worker thread** is **assigned to** the **request**. Having multiple threads allows the resolver to handle a much heavier load than a single-threaded solution could.
 
 Based on its **request type** and **query type**, the request will either be **dropped**, **forwarded** to retrieve a **real answer** or **filtered** using its requested **domain name** and the retrieved **answer**.
 
 When **filtered**, the requested **domain** name is **matched against** the Redis **blacklist** using the domain name subdomains which are optimally ordered to speed up the matching process.
 
-Redis **searches** for a **rule** for the requested **domain** name. If **no rule** is found, the request is forwarded to other DNS forwarders to retrieve a **real IP** which is also **filtered** against an **IP blacklist**.
+Redis **searches** for a **rule** for the requested **domain** name. If **no rule** is found, the request is forwarded to DNS forwarders to retrieve a **real IP** which is also **filtered** against an **IP blacklist**.
 
 **Otherwise**, the value recovered from the rule determines what is done next. The value is **either** the **custom address** that has to be used as **answer** to this request **or** it indicates that the **default address** has to be used as **answer**.
 
@@ -58,19 +54,19 @@ If **any error occurs** during the handling of a request, the worker **forwards*
 
 ## **Signals**
 
-The forwarder keeps listening for signals on a side-task. These signals can be sent to the forwarder to **control** some of its **features**.
+The resolver keeps listening for signals on a side-task. These signals can be sent to the resolver to **control** some of its **features**.
 
 | Signal | Description |
 |--------|-------------|
-| SIGHUP | Reloads the daemon's configuration from the Redis forwarder |
-| SIGUSR1 | Switches ON/OFF the forwarder's filtering |
+| SIGHUP | Reloads the daemon's configuration from the Redis resolver |
+| SIGUSR1 | Switches ON/OFF the resolver's filtering |
 | SIGUSR2 | Clears the resolver's cache |
 
 ## **Redis configuration structure example**
 
 ### **Binds**
 
-The **sockets** the forwarder's **daemon** will attempt to **bind to**.
+The **sockets** that the resolver's **daemon** will attempt to **bind to**.
 
 [SET] dnsblrsd:binds:*[DAEMON_ID]*
 
@@ -172,7 +168,7 @@ Lastly, the `systemctl` **command** is used to **configure** the **service**:
 
 ### **DO NOT**
 
-+ **Use** a **superuser** to **run** the **forwarder**. **Create** a new **user** with **limited privileges** to run the forwarder with. Even though this forwarder's stability was thoroughly checked via fuzzing, running the forwarder on **elevated privileges** would **allow** an **unforeseen vulnerability** to **wreak havoc** on the system. A new **limited user** would **restrain** an **intruder** to the **limited privileges** unless escalation is possible.
++ **Use** a **superuser** to **run** the **resolver**. **Create** a new **user** with **limited privileges** to run the resolver with. Even though this resolver's stability was thoroughly checked via fuzzing, running the resolver on **elevated privileges** would **allow** an **unforeseen vulnerability** to **wreak havoc** on the system. A new **limited user** would **restrain** an **intruder** to the **limited privileges** unless escalation is possible.
 
 # **Redis-ctl**
 
@@ -221,34 +217,34 @@ Usage: redis-ctl <PATH_TO_CONFILE> get-info <MATCHCLASS>
 ## **set-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> set-rule <RULE> [QTYPE] [IP]
+Usage: redis-ctl <PATH_TO_CONFILE> set-rule <MATCHCLASS_TYPE> <MATCHCLASS_ID> <DOMAIN> [QTYPE [IP]] 
 ```
 
 **Adds** a new **rule** to the **blacklist**.
 
 + Example 1: add rule with default ipv6
 
-  `[..] set-rule malware#BLAZIT420:not.honey.pot.net. AAAA`
+  `[..] set-rule malware BLAZIT420 not.honey.pot.net. AAAA`
 
 + Example 2: add rule with custom ipv4
 
-  `[..] set-rule adult#PEG69:daddyissues.com. A 127.0.0.1`
+  `[..] set-rule adult PEGGY69 daddyissues.com. A 127.0.0.1`
 
 ## **del-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> del-rule <RULE> [QTYPE]
+Usage: redis-ctl <PATH_TO_CONFILE> del-rule <MATCHCLASS_TYPE> <MATCHCLASS_ID> <DOMAIN> <DATE(YYYYMMDD)> [QTYPE]
 ```
 
 **Deletes** a **whole rule or** one of its two **qtypes**.
 
 + Example 1: delete the complete rule (both v4 and v6 qtypes)
 
-  `[..] del-rule malware#ICU2:surely.notpwned.net.`
+  `[..] del-rule malware ICU2 surely.notpwned.net. 20231103`
 
 + Example 2: delete ipv6 qtype of rule
 
-  `[..] del-rule malware#ICU2:surely.notpwned.net. AAAA`
+  `[..] del-rule malware ICU2 surely.notpwned.net. 20231103 AAAA`
 
 ## **drop**
 
@@ -262,19 +258,19 @@ Redis' **wildcards** (*?) can be used on the pattern.
 
 + Example:
 
-  `[..] drop malware#ID?????:*`
+  `[..] drop malware#??-*:*`
 
 ## **feed**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS>
+Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS_TYPE> <MATCHCLASS_ID>
 ```
 
 **Feeds** a **matchclass** with a **list** read line by line **from a file**. Each line represents a rule.
 
 + Example:
 
-  `[..] feed rules.list malware#AKM47`
+  `[..] feed rules.list malware AKM47`
 
 + Example line 1: line adding both custom rules for a domain name
 
@@ -326,7 +322,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf <COMMAND>
 Commands:
   add-binds      Add new binds
   clear-param    Clear a parameter
-  forwarders     Overwrite the 2 forwarders
+  add-forwarders     Add new forwarders
   blackhole-ips  Overwrite the 2 blackhole IPs
   block-ips      Add new blocked IPs
   help           Print this message or the help of the given subcommand(s)
@@ -363,19 +359,17 @@ Possible **values** of *PARAMETER* **are**:
 
   `[...] edit-conf clear-param binds`
 
-### **forwarders**
+### **add-forwarders**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf forwarders <FORWARDER1> <FORWARDER2>
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-forwarders <FORWARDER1> <FORWARDER2>
 ```
 
-**Overwrites** the **forwarders** of the dnsblrsd **configuration**.
-
-There can **only** be **2** forwarders.
+**Adds forwarders** to the dnsblrsd **configuration**.
 
 + Example:
 
-  `[...] edit-conf forwarders 203.0.113.0.2:53 203.0.113.0.3:53`
+  `[...] edit-conf add-forwarders 203.0.113.0.2:53 [2001:DB8::3]:53`
 
 ### **blackhole-ips**
 
@@ -391,14 +385,14 @@ There can **only** be **2** "blackhole_ips" and there must be a v4 and a v6. The
 
   `[...] edit-conf blackhole-ips 127.0.0.1 ::1`
 
-### **block-ips**
+### **blocked-ips**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf block-ips <IP1> [IP2 IP3 ...]
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blocked-ips <IP1> [IP2 IP3 ...]
 ```
 
 **Adds IPs** to **block** to the dnsblrsd **configuration**.
 
 + Example:
 
-  `[...] edit-conf block-ips 203.0.113.0.42 203.0.113.0.69`
+  `[...] edit-conf blocked-ips 203.0.113.0.42 203.0.113.0.69`
