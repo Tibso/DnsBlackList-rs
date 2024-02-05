@@ -53,7 +53,7 @@ pub async fn filter (
         let domain = names[name_count - (index as usize)..name_count].join(".");
 
         for filter in &filters {
-            let rule = format!("DBL:R:{filter}:{domain}");
+            let rule = format!("DBL;R;{filter};{domain}");
 
             // Attempts to find a rule with the provided filter and domain name
             let rule_val = redis_mod::hget(redis_manager, rule.as_str(), record_type.to_string().as_str()).await?;
@@ -104,7 +104,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_mod::sismember(redis_manager, format!("DBL:blocked-ips:{}", CONFILE.daemon_id).as_str(), ip.to_string().as_str()).await? {
+                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id).as_str(), ip.to_string().as_str()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
         
@@ -122,7 +122,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_mod::sismember(redis_manager, format!("DBL:blocked-ips:{}", CONFILE.daemon_id).as_str(), ip.to_string().as_str()).await? {
+                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id).as_str(), ip.to_string().as_str()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6))));
 

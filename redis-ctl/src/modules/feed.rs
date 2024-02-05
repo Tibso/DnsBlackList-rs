@@ -45,7 +45,7 @@ pub fn auto (
     let data = match fs::read_to_string(path_to_sources) {
         Ok(ok) => ok,
         Err(err) => {
-            println!("Error reading \"dnsblrs_sources.json\": {err}!");
+            println!("Error reading \"dnsblrs_sources.json\": {err}");
             // ExitCode EX_NOINPUT
             return Ok(ExitCode::from(66))
         }
@@ -54,7 +54,7 @@ pub fn auto (
     let srcs_list: Vec<SourcesLists> = match serde_json::from_str(&data) {
         Ok(ok) => ok,
         Err(err) => {
-            println!("Error deserializing \"dnsblrs_sources.json\" data: {err}!");
+            println!("Error deserializing \"dnsblrs_sources.json\" data: {err}");
             // ExitCode EX_DATAERR
             return Ok(ExitCode::from(65))
         }
@@ -123,7 +123,7 @@ pub fn auto (
         });
     }
 
-    println!("{dl_count} files were successfully downloaded and encoded.");
+    println!("Successfully downloaded and encoded {dl_count} file(s)");
 
     if sources.is_empty() {
         println!("No data was retrieved!");
@@ -137,7 +137,7 @@ pub fn auto (
     let mut cursor = 0u32;
     loop {
         let scan_keys: Vec<String>;
-        (cursor, scan_keys) = redis_mod::scan(&mut connection, cursor, "DBL:R:*")?;
+        (cursor, scan_keys) = redis_mod::scan(&mut connection, cursor, "DBL;R;*")?;
         if scan_keys.is_empty() {
             if cursor == 0 {
                 break
@@ -151,7 +151,7 @@ pub fn auto (
         }
         for source in &mut sources {
             for filter in &mut source.filters {
-                let hkey_prefix = format!("DBL:R:{}:", filter.name);
+                let hkey_prefix = format!("DBL;R;{};", filter.name);
                 filter.domains.retain(|domain| {
                     let hkey = hkey_prefix.clone() + domain;
                     if keys_set.contains(&hkey) {
@@ -169,7 +169,7 @@ pub fn auto (
         }
     }
 
-    println!("{found_count} rules were already found on Redis.");
+    println!("Found {found_count} rule(s) already on Redis");
     println!("Adding new rules to Redis...");
 
     let (year, month, day) = get_datetime::get_datetime();
@@ -177,7 +177,7 @@ pub fn auto (
     let mut add_count = 0u32;
     for source in sources {
         for filter in source.filters {
-            let hkey_prefix = format!("DBL:R:{}:", filter.name);
+            let hkey_prefix = format!("DBL;R;{};", filter.name);
             for domain in filter.domains {
                 let hkey = hkey_prefix.clone() + &domain;
                 if let Ok(count) = redis_mod::exec(&mut connection, "hset", &vec![hkey.clone(),
@@ -195,7 +195,7 @@ pub fn auto (
         }
     }
 
-    println!("{add_count} new rules were added to Redis.");
+    println!("Added {add_count} rule(s) to Redis");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -229,7 +229,7 @@ pub fn add_to_filter (
                 continue
             };
 
-            let mut args: Vec<String> = vec![format!("DBL:R:{filter}:{domain_name}"),
+            let mut args: Vec<String> = vec![format!("DBL;R;{filter};{domain_name}"),
                 "enabled".to_owned(), "1".to_owned(),
                 "date".to_owned(), format!("{year}{month}{day}"), 
                 "source".to_owned(), source.to_owned()];
@@ -268,7 +268,7 @@ pub fn add_to_filter (
         }
     }
 
-    println!("{add_count} rules were added to Redis.");
+    println!("Added {add_count} rule(s) to Redis");
 
     Ok(ExitCode::SUCCESS)
 }

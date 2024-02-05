@@ -1,5 +1,3 @@
-##### [Early in development]
-
 # **DnsBlackList-rs**
 
 DNS resolver with custom rules using [Hickory DNS](https://github.com/hickory-dns/hickory-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
@@ -9,7 +7,7 @@ This DNS resolver **filters queries** using a **blacklist** from a Redis databas
 # **Repository composition**
 
 | Directory | Description |
-|--------|-------------|
+|-----------|-------------|
 | *dnsblrsd* | Contains the resolver's daemon source code and its configuration |
 | *redis-ctl* | Contains the source code of the tool used to modify the blacklist and the daemons configurations stored in the Redis database |
 
@@ -41,7 +39,7 @@ Redis **searches** for a **rule** for the requested **domain** name. If **no rul
 
 Finally, the **response** is **sent** to the client.
 
-If **any error occurs** during the handling of a request, the worker **forwards** the **approriate error** to the client.
+If **any error occurs** during the handling of a request, the worker **responds** the **approriate error** to the client.
 
 ## **Supported Query Types**
 
@@ -62,13 +60,13 @@ The resolver keeps listening for signals on a side-task. These signals can be se
 | SIGUSR1 | Switches ON/OFF the resolver's filtering |
 | SIGUSR2 | Clears the resolver's cache |
 
-## **Redis configuration structure example**
+# **Redis configuration structure example**
 
 ### **Binds**
 
 The **sockets** that the resolver's **daemon** will attempt to **bind to**.
 
-[SET] dnsblrsd:binds:*[DAEMON_ID]*
+[SET] DBL:binds:*[DAEMON_ID]*
 
 + TCP=127.0.0.1:53
 + UDP=127.0.0.1:53
@@ -79,39 +77,40 @@ The **sockets** that the resolver's **daemon** will attempt to **bind to**.
 
 The **DNS forwarders** that will **handle** the **forwarded requests**.
 
-[SET] dnsblrsd:forwarders:*[DAEMON_ID]*
+[SET] DBL:forwarders:*[DAEMON_ID]*
 
 + 203.0.113.0.1:53
-+ 203.0.113.0.2:53
++ [::1] :53
 
-### **Blackhole IPs**
+### **Blackholes**
 
 The **default IPs** that will be **answered** to **blocked requests**. These IPs are used unless the matched rule has a specific IP configured as answer. The order does not matter.
 
-[SET] dnsblrsd:blackhole_ips:*[DAEMON_ID]*
+[SET] DBL:blackhole-ips:*[DAEMON_ID]*
 
 + 127.0.0.1
 + ::1
 
-### **Matchclasses**
+### **Filters**
 
 The **rules** that **filter** the **requests** using their requested **domain**.
 
-[SET] dnsblrsd:matchclasses:*[DAEMON_ID]*
+[SET] DBL:filters:*[DAEMON_ID]*
 
-+ malware#IT1#20230419
-+ adult#IT2#20230419
++ malware
++ adult
++ ads
 
-Each **rule** is **linked** to its **matchclass** using its **ID**. This is so hashes are easily identified in the database.
+Each **rule** is **linked** to a **filter** using its key name. 
 
-[HASH] adult#IT2#20230419:you.know.what.i.did.last.night.com.
+[HASH] DBL:R:adult:you.know.what.i.did.last.night.com.
 
 + A
   + 203.0.113.0.69
 + AAAA
   + 1
 
-[HASH] adult#IT2#20230419:i.built.that.fire.over.there.com.
+[HASH] DBL:R:adult:i.built.that.fire.over.there.com.
 
 + A
   + 203.0.113.0.42
@@ -120,21 +119,52 @@ Each **rule** is **linked** to its **matchclass** using its **ID**. This is so h
 
 Lists of **IPs** that must be **blocked** from the forwarders' answers. **V4 and V6** lists are **separated**.
 
-[SET] dnsblrsd:blocked_ips_v4:*[DAEMON_ID]*
+[SET] DBL:blocked-ips:*[DAEMON_ID]*
 
 + 203.0.113.0.42
-+ 203.0.113.0.43
-
-[SET] dnsblrsd:blocked_ips_v6:*[DAEMON_ID]*
-
 + ::42
-+ ::43
 
-## **Setup**
+### **Rule**
 
-Firstly, a **Redis** database must be **installed** and  **setup** as shown above.
+A rule **defines** a **domain** that must be lied to.
 
-Then, **place** the provided `dnsblrsd.service` **file into** the `/etc/systemd/system` **directory**.
+[HASH] DBL:R:*[FILTER]*:*[DOMAIN]*
+
++ **A**
++ **AAAA**
+
+**IP addresses** to use.
+
+**1** is a valid value and indicates the resolver to use the **default value** defined in its daemon's configuration.
+
++ **enabled**
+
+**1** or **0**, indicates an **enabled/disabled** rule.
+
++ **date**
+
+The **date** when the **rule** was **added** to the blacklist.
+
++ **source**
+
+The **source** where the rule **originates** from.
+
+# **Setup**
+
+**Prerequisite**
+
++ **Redis**
+
+---
+
+Firstly, the daemon's **configuration** must be **setup**.
+Start by **editing** the `dnsblrsd.conf` file.
+
+Then setup the configuration using `redis-ctl` and the `edit-conf` **subcommands**:
+
+`redis-ctl path_to_dnsblrsd.conf edit-conf`
+
+Next, **place** the provided `dnsblrsd.service` **file into** the `/etc/systemd/system` **directory**.
 
 The `dnsblrsd.service` file **must be updated** on a **per-user basis**. The **paths** variables **must be changed** to match your user's **environment**. The paths variables must be changed to the **full paths** to the:
 
@@ -164,7 +194,7 @@ Lastly, the `systemctl` **command** is used to **configure** the **service**:
 
 ### **DO**
 
-+ **Modify** the **environment variable** `TOKIO_WORKER_THREADS` through the **service file** to **define** the **number of threads** the runtime has to **use**. The **optimum number of threads relies on what is choking performance**. **High I/O latency** will **require more threads** to **keep** the **system busy**, otherwise some threads would remain idle while waiting on I/O. Try to **find** the **sweet spot** for your system and network. ***This massively improves performance***.
++ **Modify** the **environment variable** `TOKIO_WORKER_THREADS` through the **service file** to **define** the **number of threads** the runtime has to **use**. The **optimum number of threads relies on what is choking performance**. **High I/O latency** will **require more threads** to **keep** the **system busy**, otherwise some threads would remain idle while waiting on I/O. Try to **find** the **sweet spot** for your system and network. ***This can improve performance*** but the default value should do the trick.
 
 ### **DO NOT**
 
@@ -178,25 +208,28 @@ This is a command-line tool used to modify the Redis blacklist.
 Usage: redis-ctl <PATH_TO_CONFILE> <COMMAND>
 
 Commands:
-  show-conf    Display the dnsblrsd configuration
-  edit-conf    Reconfigure a parameter of the dnsblrsd configuration
-  get-info     Get info about a matchclass
-  set-rule     Add a new rule
-  del-rule     Delete a rule or a complete matchclass
-  drop         Drop all matchclasses that match a pattern
-  feed         Feed a list of domains to a matchclass
-  show-stats   Display stats about IP addresses that match a pattern
-  clear-stats  Clear stats about IP addresses that match a pattern
-  help         Print this message or the help of the given subcommand(s)
+  show-conf      Display the daemon's configuration
+  edit-conf      Reconfigure a parameter of the daemon's configuration
+  add-rule       Add a new rule
+  del-rule       Delete a rule or one query type (A/AAAA)
+  search-rules   Search for rules using a pattern
+  disable-rules  Disable rules that match a pattern
+  enable-rules   Enable rules that match a pattern
+  auto-feed      Update rules automatically using the sources defined in the "dnsblrsd_sources.json" file
+  feed           Feed a list of domains to a matchclass
+  show-stats     Display stats about IP addresses that match a pattern
+  clear-stats    Clear stats about IP addresses that match a pattern
+  help           Print this message or the help of the given subcommand(s)
 
 Arguments:
-  <PATH_TO_CONFILE>  Path to dnsblrsd.conf is required
+  <PATH_TO_CONFILE>  Path to "dnsblrsd.conf" is required
 
 Options:
   -h, --help  Print help
+
 ```
 
-## **show-conf**
+### **show-conf**
 
 ``` 
 Usage: redis-ctl <PATH_TO_CONFILE> showconf
@@ -206,71 +239,85 @@ Usage: redis-ctl <PATH_TO_CONFILE> showconf
 
 This command fetches the configuration that the daemon uses.
 
-## **get-info**
+### **add-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> get-info <MATCHCLASS>
-```
-
-**Retrieves** all the **information** of a **matchclass**.
-
-## **set-rule**
-
-``` 
-Usage: redis-ctl <PATH_TO_CONFILE> set-rule <MATCHCLASS_TYPE> <MATCHCLASS_ID> <DOMAIN> [QTYPE [IP]] 
+Usage: redis-ctl <PATH_TO_CONFILE> add-rule <FILTER> <SOURCE> <DOMAIN> [IP1] [IP2]
 ```
 
 **Adds** a new **rule** to the **blacklist**.
 
 + Example 1: add rule with default ipv6
 
-  `[..] set-rule malware BLAZIT420 not.honey.pot.net. AAAA`
+  `[..] set-rule malware ezy not.honey.pot.net AAAA`
 
 + Example 2: add rule with custom ipv4
 
-  `[..] set-rule adult PEGGY69 daddyissues.com. A 127.0.0.1`
+  `[..] set-rule adult pr0n daddyissues.com A 203.0.113.0.42`  
 
-## **del-rule**
+### **del-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> del-rule <MATCHCLASS_TYPE> <MATCHCLASS_ID> <DOMAIN> <DATE(YYYYMMDD)> [QTYPE]
+Usage: redis-ctl <PATH_TO_CONFILE> del-rule <FILTER> <DOMAIN> [IP]
 ```
 
-**Deletes** a **whole rule or** one of its two **qtypes**.
+**Deletes** a **whole rule** or **one** of its two **qtypes**.
 
 + Example 1: delete the complete rule (both v4 and v6 qtypes)
 
-  `[..] del-rule malware ICU2 surely.notpwned.net. 20231103`
+  `[..] del-rule malware surely.notpwned.net`
 
 + Example 2: delete ipv6 qtype of rule
 
-  `[..] del-rule malware ICU2 surely.notpwned.net. 20231103 AAAA`
+  `[..] del-rule malware surely.notpwned.net AAAA`
 
-## **drop**
+### **search-rules**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> drop <PATTERN>
+Usage: redis-ctl <PATH_TO_CONFILE> search-rules <FILTER> <DOMAIN>
 ```
 
-**Deletes** all **matchclasses** that match a **pattern**.
+**Searches** for a **rule** in the blacklist.
+
+### **enable-rules**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> enable-rules <PATTERN>
+```
+
+**Enables** all the **rules** that match a **pattern**.
 
 Redis' **wildcards** (*?) can be used on the pattern.
 
-+ Example:
-
-  `[..] drop malware#??-*:*`
-
-## **feed**
+### **disable-rules**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS_TYPE> <MATCHCLASS_ID>
+Usage: redis-ctl <PATH_TO_CONFILE> disable-rules <PATTERN>
 ```
 
-**Feeds** a **matchclass** with a **list** read line by line **from a file**. Each line represents a rule.
+**Disables** all the **rules** that match a **pattern**.
+
+Redis' **wildcards** (*?) can be used on the pattern.
+
+### **auto-feed**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> auto-feed <PATH_TO_SOURCES>
+```
+
+**Automatically updates** the **blacklist** by **downloading** domains lists listed in the "**dnsblrsd_sources.json**" file.
+
+### **feed**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <FILTER> <SOURCE>
+```
+
+**Feeds** a **filter** with a **list** read line by line **from a file**. Each line should represent a rule.
 
 + Example:
 
-  `[..] feed rules.list malware AKM47`
+  `[..] feed rules.list malware ezy`
 
 + Example line 1: line adding both custom rules for a domain name
 
@@ -284,7 +331,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <MATCHCLASS_TYPE> <MATCHC
 
   `sedun.dnes.tv. A`
 
-## **show-stats**
+### **show-stats**
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> show-stats <PATTERN>
@@ -298,7 +345,7 @@ Redis' **wildcards** (*?) can be used on the pattern.
 
   `[..] show-stats 123.?.??.*`
 
-## **clear-stats**
+### **clear-stats**
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <PATTERN>
@@ -314,21 +361,24 @@ Redis' **wildcards** (*?) can be used on the pattern.
 
 ## **edit-conf**
 
-Reconfigure a parameter of the dnsblrsd configuration via subcommands.
+Reconfigure a parameter of the daemon's configuration.
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> edit-conf <COMMAND>
 
 Commands:
-  add-binds      Add new binds
-  clear-param    Clear a parameter
-  add-forwarders     Add new forwarders
-  blackhole-ips  Overwrite the 2 blackhole IPs
-  block-ips      Add new blocked IPs
-  help           Print this message or the help of the given subcommand(s)
+  add-binds        Add new binds
+  clear-param      Clear a parameter
+  add-forwarders   Add new forwarders
+  blackholes       Overwrite the 2 blackhole IPs
+  add-blocked-ips  Add new blocked IPs
+  add-filters      Add matchclass types
+  remove-filters   Remove matchclass types
+  help             Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
+
 ```
 
 ### **add-binds**
@@ -353,11 +403,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf clear-param <PARAMETER>
 
 Possible **values** of *PARAMETER* **are**:
 
-***binds***, ***forwarders***, ***matchclasses***, ***blackhole_ips***, ***blocked_ips_v4***, ***blocked_ips_v6***
-
-+ Example:
-
-  `[...] edit-conf clear-param binds`
+***binds***, ***forwarders***, ***filters***, ***blackholes***, ***blocked-ips***
 
 ### **add-forwarders**
 
@@ -371,10 +417,10 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-forwarders <FORWARDER1> <FORWAR
 
   `[...] edit-conf add-forwarders 203.0.113.0.2:53 [2001:DB8::3]:53`
 
-### **blackhole-ips**
+### **blackholes**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blackhole-ips <IPV4> <IPV6>
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blackholes <IPV4> <IPV6>
 ```
 
 **Overwrites** the "**blackhole_ips**" of the dnsblrsd **configuration**.
@@ -385,7 +431,7 @@ There can **only** be **2** "blackhole_ips" and there must be a v4 and a v6. The
 
   `[...] edit-conf blackhole-ips 127.0.0.1 ::1`
 
-### **blocked-ips**
+### **add-blocked-ips**
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blocked-ips <IP1> [IP2 IP3 ...]
@@ -396,3 +442,18 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blocked-ips <IP1> [IP2 IP3 ...]
 + Example:
 
   `[...] edit-conf blocked-ips 203.0.113.0.42 203.0.113.0.69`
+
+### ***add-filters***
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-filters <FILTER1> [FILTER2 FILTER3 ...]
+```
+**Adds** one or more **filters** to the blacklist.
+
+### ***remove-filters***
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf remove-filters <FILTER1> [FILTER2 FILTER3 ...]
+```
+
+**Removes** one or more **filters** from the blacklist.

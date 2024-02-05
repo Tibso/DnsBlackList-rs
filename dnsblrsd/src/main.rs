@@ -80,7 +80,7 @@ async fn build_config (
     // The configuration is retrieved from Redis
     // If an error occurs, the server will not filter
     
-    match smembers(redis_manager, format!("DBL:blackholes:{}", CONFILE.daemon_id).as_str()).await {
+    match smembers(redis_manager, format!("DBL;blackholes;{}", CONFILE.daemon_id).as_str()).await {
         Err(err) => warn!("{}: Error retrieving retrieve blackholes: {err:?}", CONFILE.daemon_id),
         Ok(tmp_blackholes) => {
             // If we haven't received exactly 2 blackholes, there is an issue with the configuration
@@ -102,7 +102,7 @@ async fn build_config (
                                     => {
                                         info!("{}: Blackholes received are valid", CONFILE.daemon_id);
 
-                                        match smembers(redis_manager, format!("DBL:filters:{}", CONFILE.daemon_id).as_str()).await {
+                                        match smembers(redis_manager, format!("DBL;filters;{}", CONFILE.daemon_id).as_str()).await {
                                             Err(err) => warn!("{}: Error retrieving filters: {err:?}", CONFILE.daemon_id),
                                             Ok(tmp_filters) => {
                                                 let filters_count = tmp_filters.len();
@@ -136,7 +136,7 @@ async fn build_config (
     // If an error occurs beyond here, we return the error
     // because the server cannot start without these next values
 
-    let tmp_forwarders = smembers(redis_manager, format!("DBL:forwarders:{}", CONFILE.daemon_id).as_str()).await
+    let tmp_forwarders = smembers(redis_manager, format!("DBL;forwarders;{}", CONFILE.daemon_id).as_str()).await
         .map_err(|err| {
             error!("{}: Error retrieving forwarders: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
@@ -177,7 +177,7 @@ async fn build_config (
         warn!("{}: {valid_forwarder_count} out of {forwarders_count} forwarders are valid", CONFILE.daemon_id);
     }
 
-    let binds = smembers(redis_manager, format!("DBL:binds:{}", CONFILE.daemon_id).as_str()).await
+    let binds = smembers(redis_manager, format!("DBL;binds;{}", CONFILE.daemon_id).as_str()).await
         .map_err(|err| {
             error!("{}: Error retrieving binds: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
@@ -274,7 +274,7 @@ async fn handle_signals (
                 let new_config =  Arc::new(new_config);
                 arc_config.store(new_config);
 
-                info!("Config was rebuilt");
+                info!("Config was rebuilt, binds were not reloaded");
             },
             // Receiving a SIGUSR1 signal switches ON/OFF the server's filtering
             SIGUSR1 => {
@@ -317,14 +317,14 @@ async fn main()
     tracing_subscriber::fmt().event_format(tracing_format).init();
 
     let Ok(signals) = Signals::new([SIGHUP, SIGUSR1, SIGUSR2]) else {
-        error!("{}: Could not create signal stream", CONFILE.daemon_id);
+        error!("{}: Could not create signal stream!", CONFILE.daemon_id);
         // OSERR exitcode
         return ExitCode::from(71)
     };
     let signals_handler = signals.handle();
 
     let Ok(mut redis_manager) = redis_mod::build_manager().await else {
-            error!("{}: An error occured while building the Redis connection manager", CONFILE.daemon_id);
+            error!("{}: An error occured while building the Redis connection manager!", CONFILE.daemon_id);
             // UNAVAILABLE exitcode
             return ExitCode::from(69)
         };

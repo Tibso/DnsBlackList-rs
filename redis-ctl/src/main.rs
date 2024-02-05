@@ -30,16 +30,16 @@ fn main() -> ExitCode {
         let tmp_string = match fs::read_to_string(&cli.path_to_confile) {
             Ok(ok) => ok,
             Err(err) => {
-                println!("Error reading file from: {:?}: {err}", cli.path_to_confile, );
-                // CONFIG exitcode on error
+                println!("Error reading file from: {:?}: {err}", cli.path_to_confile);
+                // CONFIG exitcode
                 return ExitCode::from(78)
             }
         };
         match serde_json::from_str(&tmp_string) {
             Ok(ok) => ok,
             Err(err) => {
-                println!("Error deserializing config file data: {err}", );
-                // CONFIG exitcode on error
+                println!("Error deserializing config file data: {err}");
+                // CONFIG exitcode
                 return ExitCode::from(78)
             }
         }
@@ -49,16 +49,16 @@ fn main() -> ExitCode {
     let client = match Client::open(format!("redis://{}/", confile.redis_address)) {
         Ok(ok) => ok,
         Err(err) => {
-            println!("Error probing the Redis server: {err}", );
-            // NOHOST exitcode on error
+            println!("Error probing the Redis server: {err}");
+            // NOHOST exitcode
             return ExitCode::from(68)
         }
     };
     let connection = match client.get_connection() {
         Ok(ok) => ok,
         Err(err) => {
-            println!("Error creating the connection: {err}", );
-            // UNAVAILABLE exitcode on error
+            println!("Error creating the connection: {err}");
+            // UNAVAILABLE exitcode
             return ExitCode::from(69) // NICE
         }
     };
@@ -94,19 +94,19 @@ fn main() -> ExitCode {
             },
 
         Commands::ClearStats {pattern}
-            => stats::clear(connection, pattern),
+            => stats::clear(connection, &confile.daemon_id, pattern),
 
         Commands::ShowStats {pattern}
-            => stats::show(connection, pattern),
+            => stats::show(connection, &confile.daemon_id, pattern),
 
-        Commands::SearchRule {filter, domain}
+        Commands::SearchRules {filter, domain}
             => rules::search(connection, filter, domain),
 
-        Commands::DisableRules {pattern}
-            => rules::disable(connection, pattern),
+        Commands::DisableRules {filter, pattern}
+            => rules::disable(connection, filter, pattern),
 
-        Commands::EnableRules {pattern}
-            => rules::enable(connection, pattern),
+        Commands::EnableRules {filter, pattern}
+            => rules::enable(connection, filter, pattern),
 
         Commands::AutoFeed {path_to_sources}
             => feed::auto(connection, path_to_sources.to_owned()),
@@ -114,13 +114,13 @@ fn main() -> ExitCode {
         Commands::Feed {path_to_list, filter, source}
             => feed::add_to_filter(connection, path_to_list, filter, source),
 
-        Commands::SetRule {filter, source, domain, ips}
-            => rules::set(connection, filter, source, domain, ips.to_owned()),
+        Commands::AddRule {filter, source, domain, ip1, ip2}
+            => rules::add(connection, filter, source, domain, ip1.to_owned(), ip2.to_owned()),
 
         Commands::DelRule {filter, domain, ip}
             => rules::delete(connection, filter, domain, ip.to_owned()),
         
-//       Commands::BackupFull {path_to_backup}
+//        Commands::BackupFull {path_to_backup}
 //            => backup::create_full(connection, path_to_backup)
     };
 

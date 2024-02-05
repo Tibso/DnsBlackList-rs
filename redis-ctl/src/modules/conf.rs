@@ -15,28 +15,28 @@ pub fn show (
 -> RedisResult<ExitCode> {
     println!("{confile:#?}");
 
-    let binds = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL:binds:{}", confile.daemon_id)])?;
+    let binds = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL;binds;{}", confile.daemon_id)])?;
     if binds.is_empty() {
         println!("No bind is configured!");
     } else {
         println!("Binds {binds:#?}");
     }
 
-    let forwarders = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL:forwarders:{}", confile.daemon_id)])?;
+    let forwarders = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL;forwarders;{}", confile.daemon_id)])?;
     if forwarders.is_empty() {
         println!("No forwarder is configured!");
     } else {
         println!("Forwarders {forwarders:#?}");
     }
 
-    let filters = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL:filters:{}", confile.daemon_id)])?;
+    let filters = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL;filters;{}", confile.daemon_id)])?;
     if filters.is_empty() {
         println!("No filter is configured!");
     } else {
         println!("Filters {filters:#?}");
     }
 
-    let blackholes = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL:blackholes:{}", confile.daemon_id)])?;
+    let blackholes = redis_mod::fetch(&mut connection, "smembers", &vec![format!("DBL;blackholes;{}", confile.daemon_id)])?;
     if blackholes.is_empty() {
         println!("No blackholes are configured!");
     } else {
@@ -58,13 +58,13 @@ pub fn set_blackholes (
         return Ok(ExitCode::from(2))
     }
 
-    redis_mod::exec(&mut connection, "del", &vec![format!("DBL:blackholes:{daemon_id}")])?;
+    redis_mod::exec(&mut connection, "del", &vec![format!("DBL;blackholes;{daemon_id}")])?;
 
-    let mut args = vec![format!("DBL:blackholes:{daemon_id}")];
+    let mut args = vec![format!("DBL;blackholes;{daemon_id}")];
     args.extend(blackhole_ips);
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
-    println!("{add_count} blackholes were added to the configuration.");
+    println!("Added {add_count} blackhole(s) to the daemon's configuration");
         
     Ok(ExitCode::SUCCESS)
 }
@@ -76,7 +76,7 @@ pub fn add_blocked_ips (
     ips: Vec<String>
 )
 -> RedisResult<ExitCode> {
-    let mut args: Vec<String> = vec![format!("DBL:blocked-ips:{daemon_id}")];
+    let mut args: Vec<String> = vec![format!("DBL;blocked-ips;{daemon_id}")];
 
     for ip in ips {
         if let Ok(ipv4) = ip.parse::<Ipv4Addr>() {
@@ -90,7 +90,7 @@ pub fn add_blocked_ips (
     }
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
-    println!("{add_count} IPs were added to the IP blacklist.");
+    println!("Added {add_count} IP(s) to the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -102,11 +102,11 @@ pub fn add_binds (
     binds: Vec<String>
 )
 -> RedisResult<ExitCode> {
-    let mut args = vec![format!("DBL:binds:{daemon_id}")];
+    let mut args = vec![format!("DBL;binds;{daemon_id}")];
     args.extend(binds);
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
-    println!("{add_count} binds were added to the configuration.");
+    println!("Added {add_count} bind(s) to the daemon's configuration");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -118,11 +118,11 @@ pub fn clear_parameter (
     parameter: &str
 )
 -> RedisResult<ExitCode> {
-    let del_count = redis_mod::exec(&mut connection, "del", &vec![format!("DBL:{parameter}:{daemon_id}")])?;
+    let del_count = redis_mod::exec(&mut connection, "del", &vec![format!("DBL;{parameter};{daemon_id}")])?;
     if del_count != 1 {
         println!("Parameter not found!");
     }
-    println!("Parameter was cleared.");
+    println!("Parameter was cleared");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -134,11 +134,11 @@ pub fn add_forwarders (
     forwarders: Vec<String>
 )
 -> RedisResult<ExitCode> {
-    let mut args = vec![format!("DBL:forwarders:{daemon_id}")];
+    let mut args = vec![format!("DBL;forwarders;{daemon_id}")];
     args.extend(forwarders);
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
-    println!("{add_count} forwarders were added to the configuration.");
+    println!("Added {add_count} forwarder(s) to the daemon's configuration");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -150,11 +150,11 @@ pub fn add_filters (
     filters: Vec<String>
 )
 -> RedisResult<ExitCode> {
-    let mut args = vec![format!("DBL:filters:{daemon_id}")];
+    let mut args = vec![format!("DBL;filters;{daemon_id}")];
     args.extend(filters);
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
-    println!("{add_count} matchclass types were added to the daemon's configuration.");
+    println!("Added {add_count} filter(s) to the daemon's configuration");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -166,11 +166,11 @@ pub fn remove_filters (
     filters: Vec<String>
 )
 -> RedisResult<ExitCode> {
-    let mut args = vec![format!("DBL:filters:{daemon_id}")];
+    let mut args = vec![format!("DBL;filters;{daemon_id}")];
     args.extend(filters);
 
     let remove_count = redis_mod::exec(&mut connection, "srem", &args)?;
-    println!("{remove_count} matchclass types were removed from the daemon's configuration.");
+    println!("Removed {remove_count} filter(s) from the daemon's configuration");
 
     Ok(ExitCode::SUCCESS)
 }

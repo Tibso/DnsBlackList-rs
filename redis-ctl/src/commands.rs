@@ -27,42 +27,49 @@ pub enum Commands {
     EditConf (Subcommands),
 
     /// Add a new rule
-    SetRule {
+    AddRule {
         filter: String,
         source: String,
         domain: String,
-        ips: Option<Vec<String>>
+        ip1: Option<String>,
+        ip2: Option<String>
     },
 
-    /// Delete a rule or a complete filter
+    /// Delete a rule or one query type (A/AAAA)
     DelRule {
         filter: String,
         domain: String,
         ip: Option<String>
     },
 
-    /// Search for a rule
-    SearchRule {
+    /// Search for rules using a pattern
+    SearchRules {
         filter: String,
         domain: String
     },
 
     /// Disable rules that match a pattern
-    DisableRules {pattern: String},
+    DisableRules {
+        filter: String,
+        pattern: String
+    },
 
     /// Enable rules that match a pattern
-    EnableRules {pattern: String},
+    EnableRules {
+        filter: String,
+        pattern: String
+    },
 
     /// Update rules automatically using the sources defined in the "dnsblrsd_sources.json" file
-    AutoFeed {
-        path_to_sources: PathBuf
-    },
+    AutoFeed {path_to_sources: PathBuf},
+    
     /// Feed a list of domains to a matchclass
     Feed {
         path_to_list: PathBuf,
         filter: String,
         source: String
     },
+
     /// Display stats about IP addresses that match a pattern
     ShowStats {pattern: String},
 

@@ -33,7 +33,7 @@ pub async fn hget (
     field: &str
 )
 -> DnsBlrsResult<Option<String>> {
-    let ser_answer = manager.req_packed_command(cmd("HGET").arg(hash).arg(field)).await?;
+    let ser_answer = manager.req_packed_command(cmd("hget").arg(hash).arg(field)).await?;
     let deser_answer: Option<String> = FromRedisValue::from_redis_value(&ser_answer)?;
     
     Ok(deser_answer)
@@ -85,22 +85,18 @@ pub async fn write_stats (
         incr_key = "query_count";
     }
 
-    let ip_string = if ip.is_ipv6() {
-        format!("[{ip}]")
-    } else {
-        ip.to_string()
-    };
+    let ip_string = ip.to_string();
 
     // This Redis command sets the time at which a rule was matched by the IP or the last time the IP was seen
-    manager.req_packed_command(cmd("HSET")
-        .arg(format!("DBL:stats:{}:{ip_string}", CONFILE.daemon_id))
+    manager.req_packed_command(cmd("hset")
+        .arg(format!("DBL;stats;{};{ip_string}", CONFILE.daemon_id))
         .arg(set_key)
         .arg(time_epoch)
     ).await?;
 
     // This Redis command increments by 1 the number of matches or requests of the IP
-    manager.req_packed_command(cmd("HINCRBY")
-        .arg(format!("DBL:stats:{}:{ip_string}", CONFILE.daemon_id))
+    manager.req_packed_command(cmd("hincrby")
+        .arg(format!("DBL;stats;{};{ip_string}", CONFILE.daemon_id))
         .arg(incr_key)
         .arg(1)
     ).await?;
