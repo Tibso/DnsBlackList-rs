@@ -10,6 +10,8 @@
 
 ## redis-ctl
 
+- remove forwarders/blockedips
+
 - add help text to subcommands usage
 
 - investigate Box<[u8]> to reduce memory usage of auto_feed

@@ -35,7 +35,7 @@ pub enum Commands {
         ip2: Option<String>
     },
 
-    /// Delete a rule or one query type (A/AAAA)
+    /// Delete a rule or one of its two qtypes
     DelRule {
         filter: String,
         domain: String,
@@ -60,7 +60,7 @@ pub enum Commands {
         pattern: String
     },
 
-    /// Update rules automatically using the sources defined in the "dnsblrsd_sources.json" file
+    /// Update rules automatically using the "dnsblrsd_sources.json" file
     AutoFeed {path_to_sources: PathBuf},
     
     /// Feed a list of domains to a matchclass
@@ -97,9 +97,9 @@ pub enum Subcommands {
     /// Add new blocked IPs
     AddBlockedIps {blocked_ips: Vec<String>},
 
-    /// Add matchclass types
+    /// Add filters
     AddFilters {filters: Vec<String>},
 
-    /// Remove matchclass types
+    /// Remove filters
     RemoveFilters {filters: Vec<String>}
 }

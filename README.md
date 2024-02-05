@@ -211,11 +211,11 @@ Commands:
   show-conf      Display the daemon's configuration
   edit-conf      Reconfigure a parameter of the daemon's configuration
   add-rule       Add a new rule
-  del-rule       Delete a rule or one query type (A/AAAA)
+  del-rule       Delete a rule or one of its two qtypes
   search-rules   Search for rules using a pattern
   disable-rules  Disable rules that match a pattern
   enable-rules   Enable rules that match a pattern
-  auto-feed      Update rules automatically using the sources defined in the "dnsblrsd_sources.json" file
+  auto-feed      Update rules automatically using the "dnsblrsd_sources.json" file
   feed           Feed a list of domains to a matchclass
   show-stats     Display stats about IP addresses that match a pattern
   clear-stats    Clear stats about IP addresses that match a pattern
@@ -226,23 +226,20 @@ Arguments:
 
 Options:
   -h, --help  Print help
-
 ```
 
 ### **show-conf**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> showconf
+Usage: redis-ctl <PATH_TO_CONFILE> show-conf
 ```
 
 **Displays** the daemon's **configuration**.
 
-This command fetches the configuration that the daemon uses.
-
 ### **add-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> add-rule <FILTER> <SOURCE> <DOMAIN> [IP1] [IP2]
+Usage: redis-ctl <PATH_TO_CONFILE> add-rule <FILTER> <SOURCE> <DOMAIN> [IP1/QTYPE] [IP2/QTYPE]
 ```
 
 **Adds** a new **rule** to the **blacklist**.
@@ -258,7 +255,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> add-rule <FILTER> <SOURCE> <DOMAIN> [IP1] [IP
 ### **del-rule**
 
 ``` 
-Usage: redis-ctl <PATH_TO_CONFILE> del-rule <FILTER> <DOMAIN> [IP]
+Usage: redis-ctl <PATH_TO_CONFILE> del-rule <FILTER> <DOMAIN> [QTYPE]
 ```
 
 **Deletes** a **whole rule** or **one** of its two **qtypes**.
@@ -274,28 +271,32 @@ Usage: redis-ctl <PATH_TO_CONFILE> del-rule <FILTER> <DOMAIN> [IP]
 ### **search-rules**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> search-rules <FILTER> <DOMAIN>
+Usage: redis-ctl <PATH_TO_CONFILE> search-rules <FILTER> <PATTERN>
 ```
 
-**Searches** for a **rule** in the blacklist.
+**Searches** for all the **rules** in the blacklist that match a **pattern**.
 
-### **enable-rules**
++ Example:
 
-```
-Usage: redis-ctl <PATH_TO_CONFILE> enable-rules <PATTERN>
-```
-
-**Enables** all the **rules** that match a **pattern**.
-
-Redis' **wildcards** (*?) can be used on the pattern.
+  `[..] disable-rules malware *.notpwned.???`
 
 ### **disable-rules**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> disable-rules <PATTERN>
+Usage: redis-ctl <PATH_TO_CONFILE> disable-rules <FILTER> <PATTERN>
 ```
 
 **Disables** all the **rules** that match a **pattern**.
+
+Redis' **wildcards** (*?) can be used on the pattern.
+
+### **enable-rules**
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> enable-rules <FILTER> <PATTERN>
+```
+
+**Enables** all the **rules** that match a **pattern**.
 
 Redis' **wildcards** (*?) can be used on the pattern.
 
@@ -334,12 +335,12 @@ Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <FILTER> <SOURCE>
 ### **show-stats**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> show-stats <PATTERN>
+Usage: redis-ctl <PATH_TO_CONFILE> show-stats <IP_PATTERN>
 ```
 
 **Displays** all **stats** that match an IP **pattern**.
 
-Redis' **wildcards** (*?) can be used on the pattern.
+Redis' **wildcards** (*?) can be used on the IP pattern.
 
 + Example:
 
@@ -348,16 +349,12 @@ Redis' **wildcards** (*?) can be used on the pattern.
 ### **clear-stats**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <PATTERN>
+Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <IP_PATTERN>
 ```
 
 **Deletes** all **stats** that match an **IP pattern**.
 
-Redis' **wildcards** (*?) can be used on the pattern.
-
-+ Example:
-
-  `[..] clear-stats 123.?.??.*`
+Redis' **wildcards** (*?) can be used on the IP pattern.
 
 ## **edit-conf**
 
@@ -408,7 +405,7 @@ Possible **values** of *PARAMETER* **are**:
 ### **add-forwarders**
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-forwarders <FORWARDER1> <FORWARDER2>
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-forwarders <FORWARDER1> [FORWARDER2 FORWARDER3 ...]
 ```
 
 **Adds forwarders** to the dnsblrsd **configuration**.
@@ -438,10 +435,6 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blocked-ips <IP1> [IP2 IP3 ...]
 ```
 
 **Adds IPs** to **block** to the dnsblrsd **configuration**.
-
-+ Example:
-
-  `[...] edit-conf blocked-ips 203.0.113.0.42 203.0.113.0.69`
 
 ### ***add-filters***
 
