@@ -2,7 +2,7 @@ use redis::{Connection, RedisResult};
 
 use std::{
     process::ExitCode,
-    net::{Ipv4Addr, Ipv6Addr}
+    net::IpAddr
 };
 
 use crate::{Confile, redis_mod};
@@ -79,10 +79,8 @@ pub fn add_blocked_ips (
     let mut args: Vec<String> = vec![format!("DBL;blocked-ips;{daemon_id}")];
 
     for ip in ips {
-        if let Ok(ipv4) = ip.parse::<Ipv4Addr>() {
-            args.extend([ipv4.to_string()]);
-        } else if let Ok(ipv6) = ip.parse::<Ipv6Addr>() {
-            args.extend([ipv6.to_string()]);
+        if let Ok(ip) = ip.parse::<IpAddr>() {
+            args.extend([ip.to_string()]);
         } else {
             println!("Parsing error on IPs!");
             return Ok(ExitCode::from(65))
@@ -91,6 +89,29 @@ pub fn add_blocked_ips (
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
     println!("Added {add_count} IP(s) to the IP blacklist");
+
+    Ok(ExitCode::SUCCESS)
+}
+
+pub fn remove_blocked_ips (
+    mut connection: Connection,
+    daemon_id: &str,
+    ips: Vec<String>
+)
+-> RedisResult<ExitCode> {
+    let mut args: Vec<String> = vec![format!("DBL;blocked-ips;{daemon_id}")];
+
+    for ip in ips {
+        if let Ok(ip) = ip.parse::<IpAddr>() {
+            args.extend([ip.to_string()]);
+        } else {
+            println!("Parsing error on IPs!");
+            return Ok(ExitCode::from(65))
+        }
+    }
+
+    let del_count = redis_mod::exec(&mut connection, "srem", &args)?;
+    println!("Removed {del_count} IP(s) from the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -111,18 +132,17 @@ pub fn add_binds (
     Ok(ExitCode::SUCCESS)
 }
 
-/// Clear a parameter from the daemon's configuration
-pub fn clear_parameter (
+pub fn remove_binds (
     mut connection: Connection,
     daemon_id: &str,
-    parameter: &str
+    binds: Vec<String>
 )
 -> RedisResult<ExitCode> {
-    let del_count = redis_mod::exec(&mut connection, "del", &vec![format!("DBL;{parameter};{daemon_id}")])?;
-    if del_count != 1 {
-        println!("Parameter not found!");
-    }
-    println!("Parameter was cleared");
+    let mut args = vec![format!("DBL;binds;{daemon_id}")];
+    args.extend(binds);
+
+    let del_count = redis_mod::exec(&mut connection, "srem", &args)?;
+    println!("Removed {del_count} bind(s) from the daemon's configuration");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -139,6 +159,21 @@ pub fn add_forwarders (
 
     let add_count = redis_mod::exec(&mut connection, "sadd", &args)?;
     println!("Added {add_count} forwarder(s) to the daemon's configuration");
+
+    Ok(ExitCode::SUCCESS)
+}
+
+pub fn remove_forwarders (
+    mut connection: Connection,
+    daemon_id: &str,
+    forwarders: Vec<String>
+)
+-> RedisResult<ExitCode> {
+    let mut args = vec![format!("DBL;forwarders;{daemon_id}")];
+    args.extend(forwarders);
+
+    let del_count = redis_mod::exec(&mut connection, "srem", &args)?;
+    println!("Removed {del_count} forwarder(s) from the daemon's configuration");
 
     Ok(ExitCode::SUCCESS)
 }

@@ -228,7 +228,7 @@ Options:
   -h, --help  Print help
 ```
 
-### **show-conf**
+### ***show-conf***
 
 ``` 
 Usage: redis-ctl <PATH_TO_CONFILE> show-conf
@@ -236,7 +236,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> show-conf
 
 **Displays** the daemon's **configuration**.
 
-### **add-rule**
+### ***add-rule***
 
 ``` 
 Usage: redis-ctl <PATH_TO_CONFILE> add-rule <FILTER> <SOURCE> <DOMAIN> [IP1/QTYPE] [IP2/QTYPE]
@@ -252,7 +252,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> add-rule <FILTER> <SOURCE> <DOMAIN> [IP1/QTYP
 
   `[..] set-rule adult pr0n daddyissues.com A 203.0.113.0.42`  
 
-### **del-rule**
+### ***del-rule***
 
 ``` 
 Usage: redis-ctl <PATH_TO_CONFILE> del-rule <FILTER> <DOMAIN> [QTYPE]
@@ -268,7 +268,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> del-rule <FILTER> <DOMAIN> [QTYPE]
 
   `[..] del-rule malware surely.notpwned.net AAAA`
 
-### **search-rules**
+### ***search-rules***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> search-rules <FILTER> <PATTERN>
@@ -280,7 +280,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> search-rules <FILTER> <PATTERN>
 
   `[..] disable-rules malware *.notpwned.???`
 
-### **disable-rules**
+### ***disable-rules***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> disable-rules <FILTER> <PATTERN>
@@ -290,7 +290,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> disable-rules <FILTER> <PATTERN>
 
 Redis' **wildcards** (*?) can be used on the pattern.
 
-### **enable-rules**
+### ***enable-rules***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> enable-rules <FILTER> <PATTERN>
@@ -300,7 +300,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> enable-rules <FILTER> <PATTERN>
 
 Redis' **wildcards** (*?) can be used on the pattern.
 
-### **auto-feed**
+### ***auto-feed***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> auto-feed <PATH_TO_SOURCES>
@@ -308,7 +308,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> auto-feed <PATH_TO_SOURCES>
 
 **Automatically updates** the **blacklist** by **downloading** domains lists listed in the "**dnsblrsd_sources.json**" file.
 
-### **feed**
+### ***feed***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <FILTER> <SOURCE>
@@ -332,7 +332,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> feed <PATH_TO_LIST> <FILTER> <SOURCE>
 
   `sedun.dnes.tv. A`
 
-### **show-stats**
+### ***show-stats***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> show-stats <IP_PATTERN>
@@ -346,7 +346,7 @@ Redis' **wildcards** (*?) can be used on the IP pattern.
 
   `[..] show-stats 123.?.??.*`
 
-### **clear-stats**
+### ***clear-stats***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <IP_PATTERN>
@@ -356,85 +356,99 @@ Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <IP_PATTERN>
 
 Redis' **wildcards** (*?) can be used on the IP pattern.
 
-## **edit-conf**
+## ***edit-conf***
 
-Reconfigure a parameter of the daemon's configuration.
+Reconfigure a parameter of the daemon's configuration
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> edit-conf <COMMAND>
 
 Commands:
-  add-binds        Add new binds
-  clear-param      Clear a parameter
-  add-forwarders   Add new forwarders
-  blackholes       Overwrite the 2 blackhole IPs
-  add-blocked-ips  Add new blocked IPs
-  add-filters      Add matchclass types
-  remove-filters   Remove matchclass types
-  help             Print this message or the help of the given subcommand(s)
+  add-binds           Add new binds
+  remove-binds        Remove binds
+  add-forwarders      Add new forwarders
+  remove-forwarders   Remove forwarders
+  set-blackholes      Overwrite the 2 blackhole IPs
+  add-blocked-ips     Add new blocked IPs
+  remove-blocked-ips  Removed blocked IPs
+  add-filters         Add filters
+  remove-filters      Remove filters
+  help                Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
 
 ```
 
-### **add-binds**
+### ***add-binds***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-binds <BIND1> [BIND2 BIND3 ...]
 ```
 
-**Adds binds** to the dnsblrsd **configuration**.
+**Adds binds** to the daemon's **configuration**.
 
 + Example:
 
   `[...] edit-conf add-binds UDP=127.0.0.1:53 TCP=::1:53`
 
-### **clear-param**
+### ***remove-binds***
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf clear-param <PARAMETER> 
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf remove-binds <BIND1> [BIND2 BIND3 ...]
 ```
 
-**Clears** a **parameter** of the dnsblrsd **configuration**.
+**Removes binds** from the daemon's **configuration**.
 
-Possible **values** of *PARAMETER* **are**:
-
-***binds***, ***forwarders***, ***filters***, ***blackholes***, ***blocked-ips***
-
-### **add-forwarders**
+### ***add-forwarders***
 
 ```
 Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-forwarders <FORWARDER1> [FORWARDER2 FORWARDER3 ...]
 ```
 
-**Adds forwarders** to the dnsblrsd **configuration**.
+**Adds forwarders** to the daemon's **configuration**.
 
 + Example:
 
   `[...] edit-conf add-forwarders 203.0.113.0.2:53 [2001:DB8::3]:53`
 
-### **blackholes**
+### ***remove-forwarders***
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blackholes <IPV4> <IPV6>
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf remove-forwarders <FORWARDER1> [FORWARDER2 FORWARDER3 ...]
 ```
 
-**Overwrites** the "**blackhole_ips**" of the dnsblrsd **configuration**.
+**Removes forwarders** from the daemon's **configuration**.
 
-There can **only** be **2** "blackhole_ips" and there must be a v4 and a v6. The order does not matter.
+### ***set-blackholes***
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf set-blackholes <IP1> <IP2>
+```
+
+**Overwrites** the **blackhole ips** of the daemon's **configuration**.
+
+There can **only** be **2** blackhole ips and there must be a **v4** **and** a **v6**. The order does not matter.
 
 + Example:
 
-  `[...] edit-conf blackhole-ips 127.0.0.1 ::1`
+  `[...] edit-conf set-blackholes 127.0.0.1 ::1`
 
-### **add-blocked-ips**
+### ***add-blocked-ips***
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf blocked-ips <IP1> [IP2 IP3 ...]
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-blocked-ips <IP1> [IP2 IP3 ...]
 ```
 
-**Adds IPs** to **block** to the dnsblrsd **configuration**.
+**Adds blocked IPs** to the daemon's **configuration**.
+
+### ***remove-blocked-ips***
+
+```
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf remove-blocked-ips <IP1> [IP2 IP3 ...]
+```
+
+**Removes blocked IPs** from the daemon's **configuration**.
 
 ### ***add-filters***
 

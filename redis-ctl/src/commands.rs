@@ -85,17 +85,23 @@ pub enum Subcommands {
     /// Add new binds
     AddBinds {binds: Vec<String>},
 
-    /// Clear a parameter
-    ClearParam {parameter: String},
+    /// Remove binds
+    RemoveBinds {binds: Vec<String>},
 
     /// Add new forwarders
     AddForwarders {forwarders: Vec<String>},
 
+    /// Remove forwarders
+    RemoveForwarders {forwarders: Vec<String>},
+
     /// Overwrite the 2 blackhole IPs
-    Blackholes {blackhole_ips: Vec<String>},
+    SetBlackholes {blackhole_ips: Vec<String>},
 
     /// Add new blocked IPs
     AddBlockedIps {blocked_ips: Vec<String>},
+
+    ///Removed blocked IPs
+    RemoveBlockedIps {blocked_ips: Vec<String>},
 
     /// Add filters
     AddFilters {filters: Vec<String>},

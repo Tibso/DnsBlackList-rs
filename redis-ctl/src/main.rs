@@ -74,17 +74,23 @@ fn main() -> ExitCode {
                 Subcommands::AddBinds {binds}
                     => conf::add_binds(connection, &confile.daemon_id, binds.to_owned()),
 
-                Subcommands::ClearParam {parameter}
-                    => conf::clear_parameter(connection, &confile.daemon_id, parameter),
+                Subcommands::RemoveBinds {binds}
+                    => conf::remove_binds(connection, &confile.daemon_id, binds.to_owned()),
 
                 Subcommands::AddForwarders {forwarders}
                     => conf::add_forwarders(connection, &confile.daemon_id, forwarders.to_owned()),
 
-                Subcommands::Blackholes {blackhole_ips}
+                Subcommands::RemoveForwarders {forwarders}
+                    => conf::remove_forwarders(connection, &confile.daemon_id, forwarders.to_owned()),
+
+                Subcommands::SetBlackholes {blackhole_ips}
                     => conf::set_blackholes(connection, &confile.daemon_id, blackhole_ips.to_owned()),
 
                 Subcommands::AddBlockedIps {blocked_ips}
                     => conf::add_blocked_ips(connection, &confile.daemon_id, blocked_ips.to_owned()),
+
+                Subcommands::RemoveBlockedIps {blocked_ips}
+                    => conf::remove_blocked_ips(connection, &confile.daemon_id, blocked_ips.to_owned()),
 
                 Subcommands::AddFilters {filters}
                     => conf::add_filters(connection, &confile.daemon_id, filters.to_owned()),

@@ -1,6 +1,4 @@
-# todo
-
-## dnslrd
+# dnslrd
 
 - implement EDE (Extended DNS Errors)
 
@@ -8,9 +6,7 @@
 
 - rule increment counter
 
-## redis-ctl
-
-- remove forwarders/blockedips
+# redis-ctl
 
 - add help text to subcommands usage
 
