@@ -1,6 +1,6 @@
-use redis::{Connection, RedisResult, cmd};
-
 use crate::redis_mod;
+
+use redis::{Connection, RedisResult, cmd};
 
 /// Executes a command to Redis
 /// 
@@ -8,7 +8,7 @@ use crate::redis_mod;
 pub fn exec (
     connection: &mut Connection,
     command: &str,
-    args: &Vec<String>
+    args: Vec<String>
 )
 -> RedisResult<u32> {
     cmd(command).arg(args).query(connection)
@@ -20,7 +20,7 @@ pub fn exec (
 pub fn fetch (
     connection: &mut Connection,
     command: &str,
-    args: &Vec<String>
+    args: Vec<String>
 )
 -> RedisResult<Vec<String>> {
     cmd(command).arg(args).query(connection)

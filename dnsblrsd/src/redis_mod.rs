@@ -1,16 +1,11 @@
-use tracing::info;
-
-use redis::{
-    aio::{ConnectionManager, ConnectionLike},
-    Client, FromRedisValue, cmd
-};
+use crate::{structs::DnsBlrsResult, CONFILE};
 
 use std::{
     net::IpAddr,
     time::{SystemTime, UNIX_EPOCH}
 };
-
-use crate::{structs::DnsBlrsResult, CONFILE};
+use redis::{aio::ConnectionManager, cmd, pipe, Client, FromRedisValue};
+use tracing::info;
 
 /// Builds the Redis connection manager
 pub async fn build_manager()
@@ -29,77 +24,86 @@ pub async fn build_manager()
 /// Fetches the value of a field in a hash from Redis 
 pub async fn hget (
     manager: &mut ConnectionManager,
-    hash: &str,
+    hash: String,
     field: &str
 )
 -> DnsBlrsResult<Option<String>> {
-    let ser_answer = manager.req_packed_command(cmd("hget").arg(hash).arg(field)).await?;
-    let deser_answer: Option<String> = FromRedisValue::from_redis_value(&ser_answer)?;
-    
-    Ok(deser_answer)
+    let ser_answer = manager.send_packed_command(cmd("hget").arg(hash).arg(field)).await?;
+    Ok(FromRedisValue::from_redis_value(&ser_answer)?)
 }
 
 /// Fetches all the members of a set from Redis
 pub async fn smembers (
     manager: &mut ConnectionManager,
-    set: &str
+    set: String
 )
 -> DnsBlrsResult<Vec<String>> {
-    let ser_answer = manager.req_packed_command(cmd("smembers").arg(set)).await?;
-    let deser_answer: Vec<String> = FromRedisValue::from_redis_value(&ser_answer)?;
-
-    Ok(deser_answer)
+    let ser_answer = manager.send_packed_command(cmd("smembers").arg(set)).await?;
+    Ok(FromRedisValue::from_redis_value(&ser_answer)?)
 }
 
 /// Checks if a member exists in a set from Redis
 pub async fn sismember (
     manager: &mut ConnectionManager,
-    set: &str,
-    member: &str
+    set: String,
+    member: String
 )
 -> DnsBlrsResult<bool> {
-    let ser_answer = manager.req_packed_command(cmd("sismember").arg(set).arg(member)).await?;
-    let deser_answer: bool = FromRedisValue::from_redis_value(&ser_answer)?;
-
-    Ok(deser_answer)
+    let ser_answer = manager.send_packed_command(cmd("sismember").arg(set).arg(member)).await?;
+    Ok(FromRedisValue::from_redis_value(&ser_answer)?)
 }
 
-/// Writes stats on Redis about the IP of the request
-pub async fn write_stats (
-    manager: &mut ConnectionManager,
-    ip : IpAddr,
-    is_match: bool
+/// Prepares stats
+fn prepare_stats (
+    ip: String
 )
--> DnsBlrsResult<()> {
+-> DnsBlrsResult<(u64, String)> {
     // The current time is fetched and converted to EPOCH in seconds
     let time_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let stats_key = format!("DBL;stats;{};{ip}", CONFILE.daemon_id);
 
-    let set_key: &str;
-    let incr_key: &str;
-    // The key to increment to on Redis depends on whether or not a rule was matched
-    if is_match {
-        set_key = "last_match";
-        incr_key = "match_count";
-    } else {
-        set_key = "last_seen";
-        incr_key = "query_count";
-    }
+    Ok((time_epoch, stats_key))
+}
+/// Writes basic stats about a query
+pub async fn write_stats_query (
+    manager: &mut ConnectionManager,
+    ip: IpAddr
+)
+-> DnsBlrsResult<()> {
+    let (time_epoch, stats_key) = prepare_stats(ip.to_string())?;
+    
+    let mut cmd_last_seen = cmd("hset");
+    cmd_last_seen.arg(stats_key.clone()).arg("last_seen").arg(time_epoch);
+    let mut cmd_query_count = cmd("hincrby");
+    cmd_query_count.arg(stats_key).arg("query_count").arg(1);
 
-    let ip_string = ip.to_string();
+    manager.send_packed_commands(
+        pipe()
+        .add_command(cmd_last_seen).ignore()
+        .add_command(cmd_query_count).ignore(),
+        0, 0).await?;
+    
+    Ok(())
+}
+/// Writes stats about a matched rule
+pub async fn write_stats_match (
+    manager: &mut ConnectionManager,
+    ip: IpAddr,
+    rule: String
+)
+-> DnsBlrsResult<()> {
+    let (time_epoch, stats_key) = prepare_stats(ip.to_string())?;
 
-    // This Redis command sets the time at which a rule was matched by the IP or the last time the IP was seen
-    manager.req_packed_command(cmd("hset")
-        .arg(format!("DBL;stats;{};{ip_string}", CONFILE.daemon_id))
-        .arg(set_key)
-        .arg(time_epoch)
-    ).await?;
+    let mut cmd_last_match = cmd("hset");
+    cmd_last_match.arg(stats_key).arg("last_match").arg(time_epoch);
+    let mut cmd_match_count = cmd("hincrby");
+    cmd_match_count.arg(rule).arg("match_count").arg(1);
 
-    // This Redis command increments by 1 the number of matches or requests of the IP
-    manager.req_packed_command(cmd("hincrby")
-        .arg(format!("DBL;stats;{};{ip_string}", CONFILE.daemon_id))
-        .arg(incr_key)
-        .arg(1)
-    ).await?;
+    manager.send_packed_commands(
+        pipe()
+        .add_command(cmd_last_match).ignore()
+        .add_command(cmd_match_count).ignore(),
+        0, 0).await?;
 
     Ok(())
 }

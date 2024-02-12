@@ -13,7 +13,7 @@ pub fn clear (
 -> RedisResult<ExitCode> {
     let keys = redis_mod::get_keys(&mut connection, &format!("DBL;stats;{daemon_id};{pattern}"))?;
 
-    let del_count = redis_mod::exec(&mut connection, "del", &keys)?;
+    let del_count = redis_mod::exec(&mut connection, "del", keys)?;
     println!("Deleted {del_count} stat(s)");
 
     Ok(ExitCode::SUCCESS)
@@ -34,7 +34,7 @@ pub fn show (
     }
 
     for key in keys {
-        let values = redis_mod::fetch(&mut connection, "hgetall", &vec![key.clone()])?;
+        let values = redis_mod::fetch(&mut connection, "hgetall", vec![key.clone()])?;
 
         let splits: Vec<&str> = key.split(';').collect();
 

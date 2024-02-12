@@ -9,7 +9,6 @@ use crate::{
 
 //use modules::backup;
 use redis::Client;
-
 use std::{fs, process::ExitCode};
 use clap::Parser;
 use serde::{Serialize, Deserialize};
@@ -125,9 +124,6 @@ fn main() -> ExitCode {
 
         Commands::DelRule {filter, domain, ip}
             => rules::delete(connection, filter, domain, ip.to_owned()),
-        
-//        Commands::BackupFull {path_to_backup}
-//            => backup::create_full(connection, path_to_backup)
     };
 
     match result {

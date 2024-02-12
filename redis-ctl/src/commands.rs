@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-
 use clap::{Parser, Subcommand};
 
 /// The structure "clap" will parse
@@ -60,7 +59,7 @@ pub enum Commands {
         pattern: String
     },
 
-    /// Update rules automatically using the "dnsblrsd_sources.json" file
+    /// Update rules automatically using the "dnsblrs_sources.json" file
     AutoFeed {path_to_sources: PathBuf},
     
     /// Feed a list of domains to a matchclass

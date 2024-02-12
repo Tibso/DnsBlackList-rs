@@ -1,6 +1,4 @@
-use serde::Deserialize;
-use reqwest;
-use redis::{Connection, RedisResult};
+use crate::{modules::get_datetime, redis_mod};
 
 use std::{
     fs::{self, File},
@@ -10,11 +8,9 @@ use std::{
     io::{BufReader, BufRead},
     net::IpAddr
 };
-
-use crate::{
-    modules::get_datetime,
-    redis_mod
-};
+use serde::Deserialize;
+use reqwest;
+use redis::{Connection, RedisResult};
 
 struct Source {
     name: String,
@@ -180,7 +176,7 @@ pub fn auto (
             let hkey_prefix = format!("DBL;R;{};", filter.name);
             for domain in filter.domains {
                 let hkey = hkey_prefix.clone() + &domain;
-                if let Ok(count) = redis_mod::exec(&mut connection, "hset", &vec![hkey.clone(),
+                if let Ok(count) = redis_mod::exec(&mut connection, "hset", vec![hkey.clone(),
                     "A".to_owned(), "1".to_owned(),
                     "AAAA".to_owned(), "1".to_owned(),
                     "enabled".to_owned(), "1".to_owned(),
@@ -259,7 +255,7 @@ pub fn add_to_filter (
                     "AAAA".to_owned(), "1".to_owned()]);
             }
 
-            match redis_mod::exec(&mut connection, "hset", &args) {
+            match redis_mod::exec(&mut connection, "hset", args) {
                 Ok(count) => if count != 0 {
                     add_count += 1;
                 },

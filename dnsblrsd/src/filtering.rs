@@ -1,17 +1,14 @@
-use tracing::info;
-use arc_swap::Guard;
-
-use hickory_client::rr::{RData, RecordType, Record};
-use hickory_server::server::Request;
-use hickory_resolver::TokioAsyncResolver;
-use hickory_proto::rr::rdata;
-
-use std::{sync::Arc, net::IpAddr};
-
 use crate::{
     structs::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind},
     Config, resolver, redis_mod, CONFILE
 };
+
+use std::{sync::Arc, net::IpAddr};
+use hickory_client::rr::{RData, RecordType, Record};
+use hickory_server::server::Request;
+use hickory_resolver::TokioAsyncResolver;
+use hickory_proto::rr::rdata;
+use arc_swap::Guard;
 
 /// Filters out requests based on its requested domain
 pub async fn filter (
@@ -56,17 +53,17 @@ pub async fn filter (
             let rule = format!("DBL;R;{filter};{domain}");
 
             // Attempts to find a rule with the provided filter and domain name
-            let rule_val = redis_mod::hget(redis_manager, rule.as_str(), record_type.to_string().as_str()).await?;
+            let rule_val = redis_mod::hget(redis_manager, rule.clone(), record_type.to_string().as_str()).await?;
 
             if let Some(rule_val) = rule_val {
-                let enabled = redis_mod::hget(redis_manager, rule.as_str(), "enabled").await?;
+                let enabled = redis_mod::hget(redis_manager, rule.clone(), "enabled").await?;
                 if enabled.is_some_and(|enabled| enabled != "1") {
                     continue
                 }
 
-                info!("{}: request:{} \"{domain}\" has matched \"{filter}\" for record type: \"{record_type}\"",
-                    CONFILE.daemon_id, request.id()
-                );
+//                info!("{}: request:{} \"{domain}\" has matched \"{filter}\" for record type: \"{record_type}\"",
+//                    CONFILE.daemon_id, request.id()
+//                );
 
                 // If found value is "1", the blackholes are used to lie to the request
                 let rdata: RData = if rule_val == "1" {
@@ -85,7 +82,7 @@ pub async fn filter (
                 };
 
                 // Write statistics about the source IP
-                redis_mod::write_stats(redis_manager, request.request_info().src.ip(), true).await?;
+                redis_mod::write_stats_match(redis_manager, request.request_info().src.ip(), rule).await?;
 
                 return Ok(vec![Record::from_rdata(request.query().name().into(), 3600, rdata)])
             }
@@ -104,7 +101,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id).as_str(), ip.to_string().as_str()).await? {
+                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
         
@@ -122,7 +119,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id).as_str(), ip.to_string().as_str()).await? {
+                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6))));
 

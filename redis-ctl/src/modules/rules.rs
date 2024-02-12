@@ -1,14 +1,10 @@
-use redis::{Connection, RedisResult};
+use crate::{modules::get_datetime, redis_mod};
 
 use std::{
     process::ExitCode,
     net::{IpAddr, Ipv4Addr, Ipv6Addr}
 };
-
-use crate::{
-    modules::get_datetime,
-    redis_mod
-};
+use redis::{Connection, RedisResult};
 
 /// Disable rules that match a pattern
 pub fn disable (
@@ -22,10 +18,10 @@ pub fn disable (
     let mut disabled_count = 0u32;
     for key in keys {
         redis_mod::exec(&mut connection, "hset",
-            &vec![key.clone(), "enabled".to_owned(), "0".to_owned()])?;
+            vec![key.clone(), "enabled".to_owned(), "0".to_owned()])?;
 
         let hash_value = redis_mod::exec(&mut connection, "hget",
-            &vec![key.clone(), "enabled".to_owned()])?;
+            vec![key.clone(), "enabled".to_owned()])?;
         if hash_value == 0 {
             disabled_count += 1;
         }
@@ -48,10 +44,10 @@ pub fn enable (
     let mut enabled_count = 0u32;
     for key in keys {
         redis_mod::exec(&mut connection, "hset",
-            &vec![key.clone(), "enabled".to_owned(), "1".to_owned()])?;
+            vec![key.clone(), "enabled".to_owned(), "1".to_owned()])?;
 
         let hash_value = redis_mod::exec(&mut connection, "hget",
-            &vec![key.clone(), "enabled".to_owned()])?;
+            vec![key.clone(), "enabled".to_owned()])?;
         if hash_value == 1 {
             enabled_count += 1;
         }
@@ -137,7 +133,7 @@ pub fn add (
         _ => unreachable!()
     }
 
-    let count = redis_mod::exec(&mut connection, "hset", &args)?;
+    let count = redis_mod::exec(&mut connection, "hset", args)?;
     if count != 0 {
         println!("The rule was added to the blacklist");
     } else {
@@ -174,7 +170,7 @@ pub fn delete (
         }
     }
 
-    let count = redis_mod::exec(&mut connection, cmd, &args)?;
+    let count = redis_mod::exec(&mut connection, cmd, args)?;
     if count == 1 {
         println!("The rule was deleted from the blacklist");
     } else {
@@ -199,7 +195,7 @@ pub fn search (
     }
 
     for key in keys {
-        let values = redis_mod::fetch(&mut connection, "hgetall", &vec![key.clone()])?;
+        let values = redis_mod::fetch(&mut connection, "hgetall", vec![key.clone()])?;
 
         let key_cp = key.clone();
         let splits: Vec<&str> = key_cp.split(';').collect();

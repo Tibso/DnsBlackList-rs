@@ -1,8 +1,9 @@
-use arc_swap::ArcSwap;
-use std::sync::Arc;
-use tracing::{error, warn};
-use async_trait::async_trait;
+use crate::{
+    structs::{Config, DnsBlrsResult, DnsBlrsErrorKind, ExternCrateErrorKind, DnsBlrsError},
+    resolver, filtering, CONFILE, redis_mod
+};
 
+use std::sync::Arc;
 use hickory_resolver::TokioAsyncResolver;
 use hickory_server::{
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
@@ -10,11 +11,9 @@ use hickory_server::{
     authority::MessageResponseBuilder
 };
 use hickory_proto::rr::RecordType;
-
-use crate::{
-    structs::{Config, DnsBlrsResult, DnsBlrsErrorKind, ExternCrateErrorKind, DnsBlrsError},
-    resolver, filtering, CONFILE, redis_mod
-};
+use arc_swap::ArcSwap;
+use tracing::{error, warn};
+use async_trait::async_trait;
 
 #[async_trait]
 impl RequestHandler for Handler {
@@ -122,8 +121,8 @@ impl Handler {
         let resolver = self.arc_resolver.as_ref().clone();
         let mut redis_manager = self.redis_manager.clone();
         
-        // Write statistics about the source IP
-        redis_mod::write_stats(&mut redis_manager, request.request_info().src.ip(), false).await?;
+        // Write general stats about the source IP
+        redis_mod::write_stats_query(&mut redis_manager, request.request_info().src.ip()).await?;
 
         // Filters the domain name if the request is of RecordType A or AAAA
         let records = if config.is_filtering {

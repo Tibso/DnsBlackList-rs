@@ -3,14 +3,10 @@ use std::{
     io,
     time::SystemTimeError
 };
-
-
-use serde::Deserialize;
-
 use redis::RedisError;
-
 use hickory_proto::error::ProtoError;
 use hickory_resolver::error::ResolveError;
+use serde::Deserialize;
 
 pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
 

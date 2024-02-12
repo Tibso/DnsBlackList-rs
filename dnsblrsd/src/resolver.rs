@@ -1,4 +1,7 @@
-use tracing::info;
+use crate::{
+    CONFILE,
+    structs::{Config, DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind}
+};
 
 use hickory_client::{
     op::ResponseCode,
@@ -12,11 +15,7 @@ use hickory_resolver::{
     error::{ResolveErrorKind, ResolveError}
 };
 use hickory_server::server::Request;
-
-use crate::{
-    CONFILE,
-    structs::{Config, DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind}
-};
+use tracing::info;
 
 /// Builds the resolver that will forward the requests to other DNS servers
 pub fn build (config: &Config)

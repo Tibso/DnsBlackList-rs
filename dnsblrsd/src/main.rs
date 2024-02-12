@@ -1,25 +1,6 @@
 // This flag ensures any unsafe code will induce a compiler error 
 #![forbid(unsafe_code)]
 
-use tokio::net::{TcpListener, UdpSocket};
-use arc_swap::ArcSwap;
-use tracing::{info, error, warn};
-use signal_hook_tokio::Signals;
-use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
-use futures_util::stream::StreamExt;
-use lazy_static::lazy_static;
-
-use hickory_resolver::TokioAsyncResolver;
-use hickory_server::ServerFuture;
-
-use redis::aio::ConnectionManager;
-
-use std::{
-    time::Duration, fs, sync::Arc,
-    process::{ExitCode, exit},
-    net::{IpAddr, SocketAddr}
-};
-
 mod handler;
 mod redis_mod;
 mod resolver;
@@ -31,6 +12,22 @@ use crate::{
     structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind},
     redis_mod::smembers
 };
+
+use std::{
+    time::Duration, fs, sync::Arc,
+    process::{ExitCode, exit},
+    net::{IpAddr, SocketAddr}
+};
+use hickory_resolver::TokioAsyncResolver;
+use hickory_server::ServerFuture;
+use redis::aio::ConnectionManager;
+use tokio::net::{TcpListener, UdpSocket};
+use arc_swap::ArcSwap;
+use tracing::{info, error, warn};
+use signal_hook_tokio::Signals;
+use signal_hook::consts::signal::{SIGHUP, SIGUSR1, SIGUSR2};
+use futures_util::stream::StreamExt;
+use lazy_static::lazy_static;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -80,7 +77,7 @@ async fn build_config (
     // The configuration is retrieved from Redis
     // If an error occurs, the server will not filter
     
-    match smembers(redis_manager, format!("DBL;blackholes;{}", CONFILE.daemon_id).as_str()).await {
+    match smembers(redis_manager, format!("DBL;blackholes;{}", CONFILE.daemon_id)).await {
         Err(err) => warn!("{}: Error retrieving retrieve blackholes: {err:?}", CONFILE.daemon_id),
         Ok(tmp_blackholes) => {
             // If we haven't received exactly 2 blackholes, there is an issue with the configuration
@@ -102,7 +99,7 @@ async fn build_config (
                                     => {
                                         info!("{}: Blackholes received are valid", CONFILE.daemon_id);
 
-                                        match smembers(redis_manager, format!("DBL;filters;{}", CONFILE.daemon_id).as_str()).await {
+                                        match smembers(redis_manager, format!("DBL;filters;{}", CONFILE.daemon_id)).await {
                                             Err(err) => warn!("{}: Error retrieving filters: {err:?}", CONFILE.daemon_id),
                                             Ok(tmp_filters) => {
                                                 let filters_count = tmp_filters.len();
@@ -136,7 +133,7 @@ async fn build_config (
     // If an error occurs beyond here, we return the error
     // because the server cannot start without these next values
 
-    let tmp_forwarders = smembers(redis_manager, format!("DBL;forwarders;{}", CONFILE.daemon_id).as_str()).await
+    let tmp_forwarders = smembers(redis_manager, format!("DBL;forwarders;{}", CONFILE.daemon_id)).await
         .map_err(|err| {
             error!("{}: Error retrieving forwarders: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
@@ -177,7 +174,7 @@ async fn build_config (
         warn!("{}: {valid_forwarder_count} out of {forwarders_count} forwarders are valid", CONFILE.daemon_id);
     }
 
-    let binds = smembers(redis_manager, format!("DBL;binds;{}", CONFILE.daemon_id).as_str()).await
+    let binds = smembers(redis_manager, format!("DBL;binds;{}", CONFILE.daemon_id)).await
         .map_err(|err| {
             error!("{}: Error retrieving binds: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
@@ -370,9 +367,6 @@ async fn main()
         // SOFTWARE exitcode
         return ExitCode::from(70)
     };
-
-    // Code should (as of now) not be able to reach here
-    // Need to add a graceful shutdown
 
     signals_handler.close();
     if let Err(err) = signals_task.await {
