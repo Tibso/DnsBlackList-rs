@@ -9,8 +9,7 @@ mod structs;
 
 use crate::{
     handler::Handler,
-    structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind},
-    redis_mod::smembers
+    structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind}
 };
 
 use std::{
@@ -20,7 +19,7 @@ use std::{
 };
 use hickory_resolver::TokioAsyncResolver;
 use hickory_server::ServerFuture;
-use redis::aio::ConnectionManager;
+use redis::{aio::ConnectionManager, AsyncCommands};
 use tokio::net::{TcpListener, UdpSocket};
 use arc_swap::ArcSwap;
 use tracing::{info, error, warn};
@@ -39,8 +38,7 @@ lazy_static! {
 /// Reads the configuration file
 fn read_confile (
     file_name: &str
-)
--> Confile {
+) -> Confile {
     let confile: Confile = {
         let data = match fs::read_to_string(file_name) {
             Ok(ok) => ok,
@@ -70,16 +68,15 @@ fn read_confile (
 /// Builds the server's configuration
 async fn build_config (
     redis_manager: &mut ConnectionManager
-)
--> DnsBlrsResult<Config> {
+) -> DnsBlrsResult<Config> {
     let mut config = Config::default();
 
     // The configuration is retrieved from Redis
     // If an error occurs, the server will not filter
     
-    match smembers(redis_manager, format!("DBL;blackholes;{}", CONFILE.daemon_id)).await {
+    match redis_manager.smembers(format!("DBL;blackholes;{}", CONFILE.daemon_id)).await {
         Err(err) => warn!("{}: Error retrieving retrieve blackholes: {err:?}", CONFILE.daemon_id),
-        Ok(tmp_blackholes) => {
+        Ok::<Vec<String>, _>(tmp_blackholes) => {
             // If we haven't received exactly 2 blackholes, there is an issue with the configuration
             if tmp_blackholes.len() != 2 {
                 warn!("{}: Amount of blackholes received were not 2 (must have v4 and v6)", CONFILE.daemon_id);
@@ -99,9 +96,9 @@ async fn build_config (
                                     => {
                                         info!("{}: Blackholes received are valid", CONFILE.daemon_id);
 
-                                        match smembers(redis_manager, format!("DBL;filters;{}", CONFILE.daemon_id)).await {
+                                        match redis_manager.smembers(format!("DBL;filters;{}", CONFILE.daemon_id)).await {
                                             Err(err) => warn!("{}: Error retrieving filters: {err:?}", CONFILE.daemon_id),
-                                            Ok(tmp_filters) => {
+                                            Ok::<Vec<String>, _>(tmp_filters) => {
                                                 let filters_count = tmp_filters.len();
                                                 if filters_count == 0 {
                                                     warn!("{}: No filter received", CONFILE.daemon_id);
@@ -133,12 +130,12 @@ async fn build_config (
     // If an error occurs beyond here, we return the error
     // because the server cannot start without these next values
 
-    let tmp_forwarders = smembers(redis_manager, format!("DBL;forwarders;{}", CONFILE.daemon_id)).await
+    let tmp_forwarders: Vec<String> = redis_manager.smembers(format!("DBL;forwarders;{}", CONFILE.daemon_id)).await
         .map_err(|err| {
             error!("{}: Error retrieving forwarders: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
         })?;
-    let forwarders_count = u16::try_from(tmp_forwarders.len())
+    let forwarders_count = u64::try_from(tmp_forwarders.len())
         .map_err(|err| {
             error!("{}: Unexpected integer value: {err}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::LogicError)
@@ -151,7 +148,7 @@ async fn build_config (
     info!("{}: Received {forwarders_count} forwarders", CONFILE.daemon_id);
 
     // The forwarders' sockets are parsed to validate them
-    let mut valid_forwarder_count = 0u16;
+    let mut valid_forwarder_count = 0u64;
     for forwarder in tmp_forwarders {
         config.forwarders.push(
             match forwarder.parse::<SocketAddr>() {
@@ -174,7 +171,7 @@ async fn build_config (
         warn!("{}: {valid_forwarder_count} out of {forwarders_count} forwarders are valid", CONFILE.daemon_id);
     }
 
-    let binds = smembers(redis_manager, format!("DBL;binds;{}", CONFILE.daemon_id)).await
+    let binds: Vec<String> = redis_manager.smembers(format!("DBL;binds;{}", CONFILE.daemon_id)).await
         .map_err(|err| {
             error!("{}: Error retrieving binds: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
@@ -196,8 +193,7 @@ async fn build_config (
 async fn setup_binds (
     server: &mut ServerFuture<Handler>,
     config: &Config
-)
--> DnsBlrsResult<()> {
+) -> DnsBlrsResult<()> {
     let bind_count = u32::try_from(config.binds.len())
         .map_err(|_| DnsBlrsError::from(DnsBlrsErrorKind::LogicError))?;
     let mut successful_binds_count = 0u32;

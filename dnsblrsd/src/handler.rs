@@ -21,8 +21,7 @@ impl RequestHandler for Handler {
         &self,
         request: &Request,
         mut response: R
-    )
-    -> ResponseInfo {
+    ) -> ResponseInfo {
         match self.handle_request(request, response.clone()).await {
             // The successfully request's info is returned to the subscriber to be displayed
             Ok(info) => info,
@@ -98,8 +97,7 @@ impl Handler {
         &self,
         request: &Request,
         mut response: R
-    )
-    -> DnsBlrsResult<ResponseInfo> {
+    ) -> DnsBlrsResult<ResponseInfo> {
         // Filters out unwanted query and message types
         if request.op_code() != OpCode::Query {
             return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidOpCode))

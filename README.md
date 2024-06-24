@@ -66,7 +66,7 @@ The resolver keeps listening for signals on a side-task. These signals can be se
 
 The **sockets** that the resolver's **daemon** will attempt to **bind to**.
 
-[SET] DBL:binds:*[DAEMON_ID]*
+[SET] DBL;binds;*[DAEMON_ID]*
 
 + TCP=127.0.0.1:53
 + UDP=127.0.0.1:53
@@ -77,7 +77,7 @@ The **sockets** that the resolver's **daemon** will attempt to **bind to**.
 
 The **DNS forwarders** that will **handle** the **forwarded requests**.
 
-[SET] DBL:forwarders:*[DAEMON_ID]*
+[SET] DBL;forwarders;*[DAEMON_ID]*
 
 + 203.0.113.0.1:53
 + [::1] :53
@@ -86,7 +86,7 @@ The **DNS forwarders** that will **handle** the **forwarded requests**.
 
 The **default IPs** that will be **answered** to **blocked requests**. These IPs are used unless the matched rule has a specific IP configured as answer. The order does not matter.
 
-[SET] DBL:blackhole-ips:*[DAEMON_ID]*
+[SET] DBL;blackhole-ips;*[DAEMON_ID]*
 
 + 127.0.0.1
 + ::1
@@ -95,7 +95,7 @@ The **default IPs** that will be **answered** to **blocked requests**. These IPs
 
 The **rules** that **filter** the **requests** using their requested **domain**.
 
-[SET] DBL:filters:*[DAEMON_ID]*
+[SET] DBL;filters;*[DAEMON_ID]*
 
 + malware
 + adult
@@ -103,14 +103,14 @@ The **rules** that **filter** the **requests** using their requested **domain**.
 
 Each **rule** is **linked** to a **filter** using its key name. 
 
-[HASH] DBL:R:adult:you.know.what.i.did.last.night.com.
+[HASH] DBL;R;adult;you.know.what.i.did.last.night.com.
 
 + A
   + 203.0.113.0.69
 + AAAA
   + 1
 
-[HASH] DBL:R:adult:i.built.that.fire.over.there.com.
+[HASH] DBL;R;adult;i.built.that.fire.over.there.com.
 
 + A
   + 203.0.113.0.42
@@ -119,7 +119,7 @@ Each **rule** is **linked** to a **filter** using its key name.
 
 Lists of **IPs** that must be **blocked** from the forwarders' answers. **V4 and V6** lists are **separated**.
 
-[SET] DBL:blocked-ips:*[DAEMON_ID]*
+[SET] DBL;blocked-ips;*[DAEMON_ID]*
 
 + 203.0.113.0.42
 + ::42
@@ -128,7 +128,7 @@ Lists of **IPs** that must be **blocked** from the forwarders' answers. **V4 and
 
 A rule **defines** a **domain** that must be lied to.
 
-[HASH] DBL:R:*[FILTER]*:*[DOMAIN]*
+[HASH] DBL;R;*[FILTER]*;*[DOMAIN]*
 
 + **A**
 + **AAAA**

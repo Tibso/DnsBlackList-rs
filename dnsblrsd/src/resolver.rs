@@ -62,8 +62,7 @@ fn resolve_err_kind (err: ResolveError)
 pub async fn get_records (
     request: &Request,
     resolver: TokioAsyncResolver
-)
--> DnsBlrsResult<Vec<Record>> {
+) -> DnsBlrsResult<Vec<Record>> {
     let mut records: Vec<Record> = vec![];
 
     let name = request.query().name().into_name()

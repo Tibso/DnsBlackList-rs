@@ -4,7 +4,7 @@ use std::{
     net::IpAddr,
     time::{SystemTime, UNIX_EPOCH}
 };
-use redis::{aio::ConnectionManager, cmd, pipe, Client, FromRedisValue};
+use redis::{aio::ConnectionManager, AsyncCommands, Client};
 use tracing::info;
 
 /// Builds the Redis connection manager
@@ -21,43 +21,10 @@ pub async fn build_manager()
     Ok(manager)
 }
 
-/// Fetches the value of a field in a hash from Redis 
-pub async fn hget (
-    manager: &mut ConnectionManager,
-    hash: String,
-    field: &str
-)
--> DnsBlrsResult<Option<String>> {
-    let ser_answer = manager.send_packed_command(cmd("hget").arg(hash).arg(field)).await?;
-    Ok(FromRedisValue::from_redis_value(&ser_answer)?)
-}
-
-/// Fetches all the members of a set from Redis
-pub async fn smembers (
-    manager: &mut ConnectionManager,
-    set: String
-)
--> DnsBlrsResult<Vec<String>> {
-    let ser_answer = manager.send_packed_command(cmd("smembers").arg(set)).await?;
-    Ok(FromRedisValue::from_redis_value(&ser_answer)?)
-}
-
-/// Checks if a member exists in a set from Redis
-pub async fn sismember (
-    manager: &mut ConnectionManager,
-    set: String,
-    member: String
-)
--> DnsBlrsResult<bool> {
-    let ser_answer = manager.send_packed_command(cmd("sismember").arg(set).arg(member)).await?;
-    Ok(FromRedisValue::from_redis_value(&ser_answer)?)
-}
-
 /// Prepares stats
 fn prepare_stats (
-    ip: String
-)
--> DnsBlrsResult<(u64, String)> {
+    ip: &str
+) -> DnsBlrsResult<(u64, String)> {
     // The current time is fetched and converted to EPOCH in seconds
     let time_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let stats_key = format!("DBL;stats;{};{ip}", CONFILE.daemon_id);
@@ -68,21 +35,18 @@ fn prepare_stats (
 pub async fn write_stats_query (
     manager: &mut ConnectionManager,
     ip: IpAddr
-)
--> DnsBlrsResult<()> {
-    let (time_epoch, stats_key) = prepare_stats(ip.to_string())?;
-    
-    let mut cmd_last_seen = cmd("hset");
-    cmd_last_seen.arg(stats_key.clone()).arg("last_seen").arg(time_epoch);
-    let mut cmd_query_count = cmd("hincrby");
-    cmd_query_count.arg(stats_key).arg("query_count").arg(1);
+) -> DnsBlrsResult<()> {
+    let (time_epoch, stats_key) = prepare_stats(&ip.to_string())?;
 
-    manager.send_packed_commands(
-        pipe()
-        .add_command(cmd_last_seen).ignore()
-        .add_command(cmd_query_count).ignore(),
-        0, 0).await?;
-    
+    let _ = manager.hset(stats_key.clone(), "last_seen", time_epoch).await?;
+    let _ = manager.hincr(stats_key, "query_count", 1).await?;
+
+//    manager.send_packed_commands(
+//        pipe()
+//        .cmd("hset").arg(stats_key.clone()).arg("last_seen").arg(time_epoch).ignore()
+//        .cmd("hincrby").arg(stats_key).arg("query_count").arg(1).ignore(),
+//        0, 0).await?;
+
     Ok(())
 }
 /// Writes stats about a matched rule
@@ -90,20 +54,17 @@ pub async fn write_stats_match (
     manager: &mut ConnectionManager,
     ip: IpAddr,
     rule: String
-)
--> DnsBlrsResult<()> {
-    let (time_epoch, stats_key) = prepare_stats(ip.to_string())?;
+) -> DnsBlrsResult<()> {
+    let (time_epoch, stats_key) = prepare_stats(&ip.to_string())?;
 
-    let mut cmd_last_match = cmd("hset");
-    cmd_last_match.arg(stats_key).arg("last_match").arg(time_epoch);
-    let mut cmd_match_count = cmd("hincrby");
-    cmd_match_count.arg(rule).arg("match_count").arg(1);
+    let _ = manager.hset(stats_key, "last_match", time_epoch).await?;
+    let _ = manager.hincr(rule, "match_count", 1).await?;
 
-    manager.send_packed_commands(
-        pipe()
-        .add_command(cmd_last_match).ignore()
-        .add_command(cmd_match_count).ignore(),
-        0, 0).await?;
+//    manager.send_packed_commands(
+//        pipe()
+//        .cmd("hset").arg(stats_key).arg("last_match").arg(time_epoch).ignore()
+//        .cmd("hincrby").arg(rule).arg("match_count").arg(1).ignore(),
+//        0, 0).await?;
 
     Ok(())
 }

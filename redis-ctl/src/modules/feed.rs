@@ -1,4 +1,4 @@
-use crate::{modules::get_datetime, redis_mod};
+use crate::modules::get_datetime;
 
 use std::{
     fs::{self, File},
@@ -10,7 +10,7 @@ use std::{
 };
 use serde::Deserialize;
 use reqwest;
-use redis::{Connection, RedisResult};
+use redis::{cmd, Commands, Connection, RedisResult};
 
 struct Source {
     name: String,
@@ -33,11 +33,11 @@ struct List {
 }
 
 /// Automatically updates the rules using the "`dnsblrs_sources.json`" file
+// in a non-blocking fashion
 pub fn auto (
     mut connection: Connection,
     path_to_sources: PathBuf
-)
--> RedisResult<ExitCode> {
+) -> RedisResult<ExitCode> {
     let data = match fs::read_to_string(path_to_sources) {
         Ok(ok) => ok,
         Err(err) => {
@@ -59,7 +59,7 @@ pub fn auto (
     let client = reqwest::blocking::Client::new();
 
     println!("Downloading and encoding files...");
-    let mut dl_count = 0u8;
+    let mut dl_count = 0u64;
     
     let mut sources: Vec<Source> = vec![];
     for src in srcs_list {
@@ -119,7 +119,7 @@ pub fn auto (
         });
     }
 
-    println!("Successfully downloaded and encoded {dl_count} file(s)");
+    println!("{dl_count} file(s) downloaded and encoded");
 
     if sources.is_empty() {
         println!("No data was retrieved!");
@@ -129,11 +129,15 @@ pub fn auto (
 
     println!("Querying Redis...");
 
-    let mut found_count = 0u32;
+    let mut found_count = 0u64;
     let mut cursor = 0u32;
     loop {
         let scan_keys: Vec<String>;
-        (cursor, scan_keys) = redis_mod::scan(&mut connection, cursor, "DBL;R;*")?;
+        (cursor, scan_keys) = cmd("scan").arg(cursor)
+            .arg("count").arg(10000)
+            .arg("match").arg("DBL;R;*")
+            .query(&mut connection)?;
+
         if scan_keys.is_empty() {
             if cursor == 0 {
                 break
@@ -165,33 +169,32 @@ pub fn auto (
         }
     }
 
-    println!("Found {found_count} rule(s) already on Redis");
+    println!("{found_count} rule(s) already found on Redis");
     println!("Adding new rules to Redis...");
 
     let (year, month, day) = get_datetime::get_datetime();
 
-    let mut add_count = 0u32;
+    let mut add_count = 0u64;
     for source in sources {
         for filter in source.filters {
             let hkey_prefix = format!("DBL;R;{};", filter.name);
             for domain in filter.domains {
                 let hkey = hkey_prefix.clone() + &domain;
-                if let Ok(count) = redis_mod::exec(&mut connection, "hset", vec![hkey.clone(),
-                    "A".to_owned(), "1".to_owned(),
-                    "AAAA".to_owned(), "1".to_owned(),
-                    "enabled".to_owned(), "1".to_owned(),
-                    "date".to_owned(), format!("{year}{month}{day}"),
-                    "source".to_owned(), source.name.clone()]) {
-                    if count != 0 {
-                        add_count += 1;
 
+                if let Ok::<bool, _>(res) = connection.hset_multiple(hkey.clone(), &[
+                    ("A", "1"), ("AAAA", "1"), ("enabled", "1"),
+                    ("date", &format!("{year}{month}{day}")),
+                    ("source", &source.name)
+                ]) {
+                    if res {
+                        add_count += 1;
                     }
                 }
             }
         }
     }
 
-    println!("Added {add_count} rule(s) to Redis");
+    println!("{add_count} rule(s) added to Redis");
 
     Ok(ExitCode::SUCCESS)
 }
@@ -202,16 +205,16 @@ pub fn add_to_filter (
     path_to_list: &PathBuf,
     filter: &str,
     source: &str
-)
--> RedisResult<ExitCode> {
+) -> RedisResult<ExitCode> {
     let file = File::open(path_to_list)?;
 
     let (year, month, day) = get_datetime::get_datetime();
+    let date = format!("{year}{month}{day}");
 
     // If no filter is given, will assume a backup is being fed
 
-    let mut add_count = 0u32;
-    let mut line_count = 0u32;
+    let mut add_count = 0u64;
+    let mut line_count = 0u64;
     // Initializes a buffered reader and stores an iterator of its lines
     // This reader reads the file dynamically by reading big chunks of the file
     let lines = BufReader::new(file).lines();
@@ -225,9 +228,9 @@ pub fn add_to_filter (
                 continue
             };
 
-            let mut args: Vec<String> = vec![format!("DBL;R;{filter};{domain_name}"),
+            let mut args: Vec<String> = vec![
                 "enabled".to_owned(), "1".to_owned(),
-                "date".to_owned(), format!("{year}{month}{day}"), 
+                "date".to_owned(), date.clone(), 
                 "source".to_owned(), source.to_owned()];
 
             // Variable that stores whether or not the both v4 and v6 rules should be set to default
@@ -255,12 +258,15 @@ pub fn add_to_filter (
                     "AAAA".to_owned(), "1".to_owned()]);
             }
 
-            match redis_mod::exec(&mut connection, "hset", args) {
-                Ok(count) => if count != 0 {
+            // cmd is used because .hset_multiple doesn't take a Vec<(&str, &str)>
+            match cmd("hset").arg(format!("DBL;R;{filter};{domain_name}"))
+                .arg(args)
+                .query(&mut connection) {
+                Ok(res) => if res {
                     add_count += 1;
                 },
                 Err(err) => println!("Error feeding filter on line: {line_count}!\nERR: {err}")
-            }
+            };
         }
     }
 

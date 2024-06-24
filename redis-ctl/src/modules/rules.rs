@@ -1,32 +1,29 @@
-use crate::{modules::get_datetime, redis_mod};
+use crate::modules::get_datetime;
 
 use std::{
     process::ExitCode,
     net::{IpAddr, Ipv4Addr, Ipv6Addr}
 };
-use redis::{Connection, RedisResult};
+use redis::{cmd, Commands, Connection, RedisResult};
 
 /// Disable rules that match a pattern
 pub fn disable (
     mut connection: Connection,
     filter: &str,
     pattern: &str
-)
--> RedisResult<ExitCode> {
-    let keys = redis_mod::get_keys(&mut connection, &format!("DBL;R;{filter};{pattern}"))?;
-
-    let mut disabled_count = 0u32;
-    for key in keys {
-        redis_mod::exec(&mut connection, "hset",
-            vec![key.clone(), "enabled".to_owned(), "0".to_owned()])?;
-
-        let hash_value = redis_mod::exec(&mut connection, "hget",
-            vec![key.clone(), "enabled".to_owned()])?;
-        if hash_value == 0 {
-            disabled_count += 1;
-        }
+) -> RedisResult<ExitCode> {
+    let keys: Vec<String> = connection.scan_match(format!("DBL;R;{filter};{pattern}"))?.collect();
+    if keys.is_empty() {
+        println!("No match for: {pattern}");
+        return Ok(ExitCode::SUCCESS)
     }
 
+    let mut disabled_count = 0u64;
+    for key in keys {
+        if let Ok::<u64, _>(res) = connection.hset(key, "enabled", "0") {
+            disabled_count += res;
+        };
+    }
     println!("Disabled {disabled_count} rule(s)");
 
     Ok(ExitCode::SUCCESS)
@@ -37,22 +34,19 @@ pub fn enable (
     mut connection: Connection,
     filter: &str,
     pattern: &str
-)
--> RedisResult<ExitCode> {
-    let keys = redis_mod::get_keys(&mut connection, &format!("DBL;R;{filter};{pattern}"))?;
-
-    let mut enabled_count = 0u32;
-    for key in keys {
-        redis_mod::exec(&mut connection, "hset",
-            vec![key.clone(), "enabled".to_owned(), "1".to_owned()])?;
-
-        let hash_value = redis_mod::exec(&mut connection, "hget",
-            vec![key.clone(), "enabled".to_owned()])?;
-        if hash_value == 1 {
-            enabled_count += 1;
-        }
+) -> RedisResult<ExitCode> {
+    let keys: Vec<String> = connection.scan_match(format!("DBL;R;{filter};{pattern}"))?.collect();
+    if keys.is_empty() {
+        println!("No match for: {pattern}");
+        return Ok(ExitCode::SUCCESS)
     }
 
+    let mut enabled_count = 0u64;
+    for key in keys {
+        if let Ok::<u64, _>(res) = connection.hset(key, "enabled", "1") {
+            enabled_count += res;
+        };
+    }
     println!("Enabled {enabled_count} rule(s)");
 
     Ok(ExitCode::SUCCESS)
@@ -66,12 +60,13 @@ pub fn add (
     domain: &str,
     ip1: Option<String>,
     ip2: Option<String>
-)
--> RedisResult<ExitCode> {
+) -> RedisResult<ExitCode> {
     let (year, month, day) = get_datetime::get_datetime();
-    let mut args: Vec<String> = vec![format!("DBL;R;{filter};{domain}"),
+    let date = format!("{year}{month}{day}");
+
+    let mut args: Vec<String> = vec![
         "enabled".to_owned(), "1".to_owned(),
-        "date".to_owned(), format!("{year}{month}{day}"),
+        "date".to_owned(), date,
         "source".to_owned(), source.to_owned()];
 
     match (ip1, ip2) {
@@ -87,7 +82,7 @@ pub fn add (
                         args.extend(["A".to_owned(), "1".to_owned(), "AAAA".to_owned(), ipv6.to_string()])
                     } else {
                         println!("IP parsed was not Ipv6!");
-                        return Ok(ExitCode::from(65))
+                        return Ok(ExitCode::from(65));
                     }
                 },
                 ("AAAA", ip) | (ip, "AAAA") => {
@@ -95,22 +90,27 @@ pub fn add (
                         args.extend(["AAAA".to_owned(), "1".to_owned(), "A".to_owned(), ipv4.to_string()])
                     } else {
                         println!("IP parsed was not Ipv4!");
-                        return Ok(ExitCode::from(65))
+                        return Ok(ExitCode::from(65));
                     }
                 },
                 _ => {
-                    if let (Ok(ip1), Ok(ip2)) = (ip1.parse::<IpAddr>(), ip2.parse::<IpAddr>()) {
+                    if let (Ok(ip1), Ok(ip2)) = (
+                        ip1.parse::<IpAddr>(),
+                        ip2.parse::<IpAddr>(),
+                    ) {
                         match (ip1, ip2) {
-                            (IpAddr::V4(ipv4), IpAddr::V6(ipv6)) | (IpAddr::V6(ipv6), IpAddr::V4(ipv4))
-                                => args.extend(["A".to_owned(), ipv4.to_string(), "AAAA".to_owned(), ipv6.to_string()]),
+                            (IpAddr::V4(ipv4), IpAddr::V6(ipv6))
+                            | (IpAddr::V6(ipv6), IpAddr::V4(ipv4)) => {
+                                args.extend(["A".to_owned(), ipv4.to_string(), "AAAA".to_owned(), ipv6.to_string()]);
+                            },
                             _ => {
                                 println!("Provided IPs cannot both be v4 or v6!");
-                                return Ok(ExitCode::from(65))
+                                return Ok(ExitCode::from(65));
                             }
                         }
                     } else {
                         println!("Could not parse provided IPs!");
-                        return Ok(ExitCode::from(65))
+                        return Ok(ExitCode::from(65));
                     }
                 }
             }
@@ -122,20 +122,23 @@ pub fn add (
                 _ => if let Ok(ip) = ip.parse::<IpAddr>() {
                         match ip {
                             IpAddr::V4(ipv4) => args.extend(["A".to_owned(), ipv4.to_string()]),
-                            IpAddr::V6(ipv6) => args.extend(["AAAA".to_owned(), ipv6.to_string()])
+                            IpAddr::V6(ipv6) => args.extend(["AAAA".to_owned(), ipv6.to_string()]),
                         }
                     } else {
                         println!("Could not parse the provided IP!");
-                        return Ok(ExitCode::from(65))
+                        return Ok(ExitCode::from(65));
                     }
             }
         },
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 
-    let count = redis_mod::exec(&mut connection, "hset", args)?;
-    if count != 0 {
-        println!("The rule was added to the blacklist");
+    // using cmd because connection.hset_multiple doesn't take Vec<>
+    let res: bool = cmd("hset").arg(format!("DBL;R;{filter};{domain}"))
+        .arg(args)
+        .query(&mut connection)?;
+    if res {
+        println!("The rule was added to the blacklist")
     } else {
         println!("Could not add the rule to the blacklist!");
     }
@@ -149,15 +152,14 @@ pub fn delete (
     filter: &str,
     domain: &str,
     q_type: Option<String>
-)
--> RedisResult<ExitCode> {
-    let cmd: &str;
+) -> RedisResult<ExitCode> {
+    let command: &str;
     let mut args: Vec<String> = vec![format!("DBL;R;{filter};{domain}")];
     if q_type.is_none() {
         println!("Record type not provided, deleting rule for both v4 and v6");
-        cmd = "del";
+        command = "del";
     } else {
-        cmd = "hdel";
+        command = "hdel";
 
         let q_type_string = q_type.unwrap();
         match q_type_string.as_str() {
@@ -170,11 +172,13 @@ pub fn delete (
         }
     }
 
-    let count = redis_mod::exec(&mut connection, cmd, args)?;
-    if count == 1 {
-        println!("The rule was deleted from the blacklist");
+    let res: bool = cmd(command).arg(format!("DBL;R;{filter};{domain}"))
+        .arg(args)
+        .query(&mut connection)?;
+    if res {
+        println!("The rule was added to the blacklist")
     } else {
-        println!("Could not delete the rule from the blacklist!");
+        println!("Could not add the rule to the blacklist!");
     }
 
     Ok(ExitCode::SUCCESS)
@@ -185,21 +189,16 @@ pub fn search (
     mut connection: Connection,
     filter: &str,
     pattern: &str
-)
--> RedisResult<ExitCode> {
-    let keys = redis_mod::get_keys(&mut connection, &format!("DBL;R;{filter};{pattern}"))?;
-
+) -> RedisResult<ExitCode> {
+    let keys: Vec<String> = connection.scan_match(format!("DBL;R;{filter};{pattern}"))?.collect();
     if keys.is_empty() {
         println!("No match for: {pattern}");
         return Ok(ExitCode::SUCCESS)
     }
 
     for key in keys {
-        let values = redis_mod::fetch(&mut connection, "hgetall", vec![key.clone()])?;
-
-        let key_cp = key.clone();
-        let splits: Vec<&str> = key_cp.split(';').collect();
-
+        let values = connection.hgetall(key.clone())?;
+        let splits: Vec<&str> = key.split(';').collect();
         println!("{}\n{values:?}\n", splits[3]);
     }
 

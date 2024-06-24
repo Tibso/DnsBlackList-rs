@@ -9,6 +9,7 @@ use hickory_server::server::Request;
 use hickory_resolver::TokioAsyncResolver;
 use hickory_proto::rr::rdata;
 use arc_swap::Guard;
+use redis::AsyncCommands;
 
 /// Filters out requests based on its requested domain
 pub async fn filter (
@@ -16,8 +17,7 @@ pub async fn filter (
     config: &Guard<Arc<Config>>,
     redis_manager: &mut redis::aio::ConnectionManager,
     resolver: TokioAsyncResolver
-)
--> DnsBlrsResult<Vec<Record>> {
+) -> DnsBlrsResult<Vec<Record>> {
     let record_type = request.query().query_type();
 
     let mut domain_name = request.query().name().to_string();
@@ -53,11 +53,11 @@ pub async fn filter (
             let rule = format!("DBL;R;{filter};{domain}");
 
             // Attempts to find a rule with the provided filter and domain name
-            let rule_val = redis_mod::hget(redis_manager, rule.clone(), record_type.to_string().as_str()).await?;
+            let rule_val: Option<String> = redis_manager.hget(rule.clone(), record_type.to_string().as_str()).await?;
 
             if let Some(rule_val) = rule_val {
-                let enabled = redis_mod::hget(redis_manager, rule.clone(), "enabled").await?;
-                if enabled.is_some_and(|enabled| enabled != "1") {
+                let enabled: u8 = redis_manager.hget(rule.clone(), "enabled").await?;
+                if enabled != 1 {
                     continue
                 }
 
@@ -101,7 +101,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
+                        if redis_manager.sismember(format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
         
@@ -119,7 +119,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_mod::sismember(redis_manager, format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
+                        if redis_manager.sismember(format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6))));
 

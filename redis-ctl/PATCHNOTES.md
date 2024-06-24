@@ -1,6 +1,6 @@
 # 1.0.3
 
-+ Updated dependencies
++ Cleaned code
 
 # 1.0.2
 

@@ -2,7 +2,7 @@
 
 - implement EDE (Extended DNS Errors)
 
-- graceful shutdown (already can??)
+- graceful shutdown
 
 # redis-ctl
 

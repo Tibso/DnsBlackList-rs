@@ -1,6 +1,5 @@
 mod commands;
 mod modules;
-mod redis_mod;
 
 use crate::{
     commands::{Cli, Commands, Subcommands},
