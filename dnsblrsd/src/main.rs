@@ -13,9 +13,7 @@ use crate::{
 };
 
 use std::{
-    time::Duration, fs, sync::Arc,
-    process::{ExitCode, exit},
-    net::{IpAddr, SocketAddr}
+    fs, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, process::{exit, ExitCode}, str::FromStr, sync::Arc, time::Duration
 };
 use hickory_resolver::TokioAsyncResolver;
 use hickory_server::ServerFuture;
@@ -65,71 +63,23 @@ fn read_confile (
     confile
 }
 
-/// Builds the server's configuration
+/// Checks the config blackhole ips
+fn check_blackhole_ips(
+    blackholes: Vec<String>
+) -> Option<(Ipv4Addr, Ipv6Addr)> {
+    Some(match IpAddr::from_str(blackholes.get(0).unwrap()).ok()? {
+        IpAddr::V4(ipv4) => (ipv4, Ipv6Addr::from_str(blackholes.get(1).unwrap()).ok()?),
+        IpAddr::V6(ipv6) => (Ipv4Addr::from_str(blackholes.get(1).unwrap()).ok()?, ipv6)
+    })
+}
+/// Builds the server config
 async fn build_config (
     redis_manager: &mut ConnectionManager
 ) -> DnsBlrsResult<Config> {
     let mut config = Config::default();
 
-    // The configuration is retrieved from Redis
-    // If an error occurs, the server will not filter
-    
-    match redis_manager.smembers(format!("DBL;blackholes;{}", CONFILE.daemon_id)).await {
-        Err(err) => warn!("{}: Error retrieving retrieve blackholes: {err:?}", CONFILE.daemon_id),
-        Ok::<Vec<String>, _>(tmp_blackholes) => {
-            // If we haven't received exactly 2 blackholes, there is an issue with the configuration
-            if tmp_blackholes.len() != 2 {
-                warn!("{}: Amount of blackholes received were not 2 (must have v4 and v6)", CONFILE.daemon_id);
-            } else {
-                let mut tmp_blackholes = tmp_blackholes.iter();
-
-                match tmp_blackholes.next().unwrap().parse::<IpAddr>() {
-                    Err(err) => warn!("{}: Error parsing first blackhole IP: {err:?}", CONFILE.daemon_id),
-                    Ok(ip1) => {
-                        match tmp_blackholes.next().unwrap().parse::<IpAddr>() {
-                            Err(err) => warn!("{}: Error parsing second blackhole IP: {err:?}", CONFILE.daemon_id),
-                            Ok(ip2) => {
-                                // There must be one IPv4 and one IPv6
-                                match (ip1, ip2) {
-                                    | (IpAddr::V4(ipv4), IpAddr::V6(ipv6))
-                                    | (IpAddr::V6(ipv6), IpAddr::V4(ipv4))
-                                    => {
-                                        info!("{}: Blackholes received are valid", CONFILE.daemon_id);
-
-                                        match redis_manager.smembers(format!("DBL;filters;{}", CONFILE.daemon_id)).await {
-                                            Err(err) => warn!("{}: Error retrieving filters: {err:?}", CONFILE.daemon_id),
-                                            Ok::<Vec<String>, _>(tmp_filters) => {
-                                                let filters_count = tmp_filters.len();
-                                                if filters_count == 0 {
-                                                    warn!("{}: No filter received", CONFILE.daemon_id);
-                                                } else {
-                                                    // If at least 1 matchclass is received, the server will filter the requests
-                                                    config.blackholes = Some((ipv4, ipv6));
-                                                    config.is_filtering = true;
-                                                    config.filters = Some(tmp_filters);
-
-                                                    info!("{}: Received {filters_count} filters", CONFILE.daemon_id);
-                                                }
-                                            }
-                                        }
-                                    },
-                                    _ => warn!("The blackholes are not properly configured, there must be one IPv4 and one IPv6"),
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if !config.is_filtering {
-        warn!("{}: The server will not filter any request because of misconfiguration", CONFILE.daemon_id);
-    }
-
-    // If an error occurs beyond here, we return the error
-    // because the server cannot start without these next values
-
+    // The config is retrieved from Redis
+    // Fatal config errors are checked first for early returns
     let tmp_forwarders: Vec<String> = redis_manager.smembers(format!("DBL;forwarders;{}", CONFILE.daemon_id)).await
         .map_err(|err| {
             error!("{}: Error retrieving forwarders: {err:?}", CONFILE.daemon_id);
@@ -146,8 +96,7 @@ async fn build_config (
         return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
     }
     info!("{}: Received {forwarders_count} forwarders", CONFILE.daemon_id);
-
-    // The forwarders' sockets are parsed to validate them
+    // The forwarders' sockets are parsed for validation
     let mut valid_forwarder_count = 0u64;
     for forwarder in tmp_forwarders {
         config.forwarders.push(
@@ -176,16 +125,58 @@ async fn build_config (
             error!("{}: Error retrieving binds: {err:?}", CONFILE.daemon_id);
             DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
         })?;
-
     let bind_count = binds.len();
     if bind_count == 0 {
         error!("{}: No bind received!", CONFILE.daemon_id);
         return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
     }
     config.binds = binds;
-
     info!("{}: Received {bind_count} binds", CONFILE.daemon_id);
 
+    // Errors shouldn't be fatal anymore
+    // If an error occurs beyond this point, the server will not filter
+    let filter_warn_msg = "The server will not filter any request";
+    let blackholes: Vec<String> = match redis_manager.smembers(format!("DBL;blackholes;{}", CONFILE.daemon_id)).await {
+        Ok(blackholes) => blackholes,
+        Err(err) => {
+            warn!("{}: Error retrieving blackholes: {err:?}\n
+                {}: {filter_warn_msg}", CONFILE.daemon_id, CONFILE.daemon_id);
+            return Ok(config)
+        }
+    };
+    // If we haven't received exactly 2 blackholes, there is an issue with the configuration
+    if blackholes.len() != 2 {
+        warn!("{}: Amount of blackholes received were not 2 (must have v4 and v6)\n
+            {}: {filter_warn_msg}", CONFILE.daemon_id, CONFILE.daemon_id);
+        return Ok(config)
+    }
+
+    let Some((ipv4, ipv6)) = check_blackhole_ips(blackholes) else {
+        warn!("{}: The blackholes are not properly configured, there must be one IPv4 and one IPv6", CONFILE.daemon_id);
+        return Ok(config)
+    };
+
+    let filters: Vec<String> = match redis_manager.smembers(format!("DBL;filters;{}", CONFILE.daemon_id)).await {
+        Ok(filters) => filters,
+        Err(err) => {
+            warn!("{}: Error retrieving filters: {err:?}\n
+                {}: {filter_warn_msg}", CONFILE.daemon_id, CONFILE.daemon_id);
+            return Ok(config)
+        }
+    };
+    // If at least 1 filter is received, the server will filter the requests
+    let filters_count: usize = filters.len();
+    if filters_count == 0 {
+        warn!("{}: No filter received\n
+                {}: {filter_warn_msg}", CONFILE.daemon_id, CONFILE.daemon_id);
+        return Ok(config)
+    }
+
+    config.blackholes = Some((ipv4, ipv6));
+    config.is_filtering = true;
+    config.filters = Some(filters);
+
+    info!("{}: Received {filters_count} filters", CONFILE.daemon_id);
     Ok(config)
 }
 
