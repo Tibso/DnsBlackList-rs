@@ -1,8 +1,9 @@
 use crate::{
-    CONFILE,
-    structs::{Config, DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind}
+    DAEMON_ID,
+    structs::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind}
 };
 
+use std::net::SocketAddr;
 use hickory_client::{
     op::ResponseCode,
     rr::RecordType,
@@ -18,16 +19,18 @@ use hickory_server::server::Request;
 use tracing::info;
 
 /// Builds the resolver that will forward the requests to other DNS servers
-pub fn build (config: &Config)
+pub fn build(forwarders: Vec<SocketAddr>)
 -> TokioAsyncResolver {
     let mut resolver_config = ResolverConfig::new();
     // Local domain is set as resolver's domain
     resolver_config.domain();
 
-    for socket in config.forwarders.clone() {
-        let ns_udp = NameServerConfig::new(socket, Protocol::Udp);
+    let daemon_id = DAEMON_ID.get().expect("Could not fetch daemon_id");
+
+    for socket_addr in forwarders {
+        let ns_udp = NameServerConfig::new(socket_addr, Protocol::Udp);
         resolver_config.add_name_server(ns_udp);
-        let ns_tcp = NameServerConfig::new(socket, Protocol::Tcp);
+        let ns_tcp = NameServerConfig::new(socket_addr, Protocol::Tcp);
         resolver_config.add_name_server(ns_tcp);
     }
     
@@ -42,12 +45,12 @@ pub fn build (config: &Config)
         resolver_opts
     );
 
-    info!("{}: Resolver built", CONFILE.daemon_id);
+    info!("{daemon_id}: Resolver built");
     resolver
 }
 
 /// Handles the resolver errors
-fn resolve_err_kind (err: ResolveError)
+fn resolve_err_kind(err: ResolveError)
 -> DnsBlrsResult<()> {
     match err.kind() {
         ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..}
@@ -59,7 +62,7 @@ fn resolve_err_kind (err: ResolveError)
 }
 
 /// Uses the resolver to retrieve the correct records
-pub async fn get_records (
+pub async fn get_records(
     request: &Request,
     resolver: TokioAsyncResolver
 ) -> DnsBlrsResult<Vec<Record>> {

@@ -1,8 +1,4 @@
-use std::{
-    net::{SocketAddr, Ipv6Addr, Ipv4Addr},
-    io,
-    time::SystemTimeError
-};
+use std::{io, net::{Ipv4Addr, Ipv6Addr}, time::SystemTimeError};
 use redis::RedisError;
 use hickory_proto::error::ProtoError;
 use hickory_resolver::error::ResolveError;
@@ -19,22 +15,18 @@ pub struct Confile {
 
 #[derive(Deserialize, Debug, Clone)]
 /// The configuration structure
-pub struct Config { 
-    pub forwarders: Vec<SocketAddr>,
-    pub binds: Vec<String>,
+pub struct Config {
     pub is_filtering: bool,
-    pub filters: Option<Vec<String>>,
-    pub blackholes: Option<(Ipv4Addr, Ipv6Addr)>
+    pub filters: Vec<String>,
+    pub blackholes: (Ipv4Addr, Ipv6Addr)
 }
 impl Default for Config {
     /// Initializes the configuration structure with its default values
     fn default() -> Self {
         Self {
-            forwarders: vec![],
-            binds : vec![],
             is_filtering: false,
-            filters: None,
-            blackholes: None
+            filters: Vec::new(),
+            blackholes: (Ipv4Addr::LOCALHOST, Ipv6Addr::LOCALHOST)
         }
     }
 }

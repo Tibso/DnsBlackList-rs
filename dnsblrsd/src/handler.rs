@@ -1,6 +1,6 @@
 use crate::{
     structs::{Config, DnsBlrsResult, DnsBlrsErrorKind, ExternCrateErrorKind, DnsBlrsError},
-    resolver, filtering, CONFILE, redis_mod
+    resolver, filtering, DAEMON_ID, redis_mod
 };
 
 use std::sync::Arc;
@@ -32,33 +32,35 @@ impl RequestHandler for Handler {
                 header.set_authoritative(false);
                 header.set_recursion_available(true);
 
+                let daemon_id = DAEMON_ID.get().expect("Could not fetch daemon_id");
+
                 let request_info = request.request_info();
-                let msg_stats = format!("{}: request:{} src:{}://{} QUERY:{} | ",
-                    CONFILE.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
+                let msg_stats = format!("{daemon_id}: request:{} src:{}://{} QUERY:{} | ",
+                    request.id(), request_info.protocol, request_info.src, request_info.query
                 );
                 match err.kind() {
                     DnsBlrsErrorKind::InvalidOpCode => {
-                        warn!("{msg_stats}An \"InvalidOpCode\" error occured!");
+                        warn!("{msg_stats}An \"InvalidOpCode\" error occured");
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::InvalidMessageType => {
-                        warn!("{msg_stats}An \"InvalidMessageType\" error occured!");
+                        warn!("{msg_stats}An \"InvalidMessageType\" error occured");
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::RequestRefused => {
-                        error!("{msg_stats}A resolver's request was refused by a forwarder!");
+                        error!("{msg_stats}A resolver's request was refused by a forwarder");
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::InvalidRule => {
-                        error!("{msg_stats}A rule seems to be broken!");
+                        error!("{msg_stats}A rule seems to be broken");
                         header.set_response_code(ResponseCode::ServFail);
                     },
                     DnsBlrsErrorKind::NotImpl => {
-                        warn!("{msg_stats}This \"query_type\" is not implemented!");
+                        warn!("{msg_stats}This \"query_type\" is not implemented");
                         header.set_response_code(ResponseCode::NotImp);
                     }
                     DnsBlrsErrorKind::LogicError => {
-                        warn!("{msg_stats}A logic error occured!");
+                        warn!("{msg_stats}A logic error occured");
                         header.set_response_code(ResponseCode::ServFail);
                     },
                     DnsBlrsErrorKind::ExternCrateError(extern_crate_errorkind) => {
@@ -76,11 +78,11 @@ impl RequestHandler for Handler {
                         }
                         header.set_response_code(ResponseCode::ServFail);
                     }
-                    _ => unreachable!()
+                    _ => unreachable!("Unfinished implementation of new error kind")
                 }
 
                 let message = builder.build(header, &[], &[], &[], &[]);
-                response.send_response(message).await.expect("Could not send the error response!")
+                response.send_response(message).await.expect("Could not send the error response")
             }
         }
     }

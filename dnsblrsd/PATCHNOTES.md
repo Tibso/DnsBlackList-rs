@@ -1,3 +1,7 @@
+# 1.1.3
+
++ Isolated functions in respective files and config changes
+
 # 1.1.2
 
 + Cleaned config build code

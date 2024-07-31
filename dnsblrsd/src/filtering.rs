@@ -1,6 +1,6 @@
 use crate::{
     structs::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind},
-    Config, resolver, redis_mod, CONFILE
+    Config, resolver, redis_mod, DAEMON_ID
 };
 
 use std::{sync::Arc, net::IpAddr};
@@ -42,8 +42,8 @@ pub async fn filter (
 
     // "blackholes" and "filters" are cloned
     // out of the configuration to be used on this thread
-    let (blackhole_ipv4, blackhole_ipv6) = config.blackholes.unwrap();
-    let filters = config.filters.clone().unwrap();
+    let (blackhole_ipv4, blackhole_ipv6) = config.blackholes;
+    let filters = config.filters.clone();
 
     for index in order {
         // The domain name is reconstructed based on each iteration of order
@@ -95,16 +95,17 @@ pub async fn filter (
         return Ok(records)
     }
 
+    let daemon_id = DAEMON_ID.get().expect("Could not fetch daemon_id");
     match record_type {
         RecordType::A => {
             // If a record is blacklisted, replace it with the blackhole
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_manager.sismember(format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
+                        if redis_manager.sismember(format!("DBL;blocked-ips;{daemon_id}"), ip.to_string()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
-        
+
                             return Ok(records)
                         }
                     } else {
@@ -119,7 +120,7 @@ pub async fn filter (
             for record in &records {
                 if let Some(rdata) = record.data() {
                     if let Some(ip) = rdata.ip_addr() {
-                        if redis_manager.sismember(format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
+                        if redis_manager.sismember(format!("DBL;blocked-ips;{daemon_id}"), ip.to_string()).await? {
                             records.clear();
                             records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6))));
 
