@@ -1,35 +1,9 @@
-use std::{io, net::{Ipv4Addr, Ipv6Addr}, time::SystemTimeError};
+use std::{io, time::SystemTimeError};
 use redis::RedisError;
 use hickory_proto::error::ProtoError;
 use hickory_resolver::error::ResolveError;
-use serde::Deserialize;
 
 pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
-
-#[derive(Deserialize, Debug, Clone)]
-/// The configuration file structure
-pub struct Confile {
-    pub daemon_id: String,
-    pub redis_address: String
-}
-
-#[derive(Deserialize, Debug, Clone)]
-/// The configuration structure
-pub struct Config {
-    pub is_filtering: bool,
-    pub filters: Vec<String>,
-    pub blackholes: (Ipv4Addr, Ipv6Addr)
-}
-impl Default for Config {
-    /// Initializes the configuration structure with its default values
-    fn default() -> Self {
-        Self {
-            is_filtering: false,
-            filters: Vec::new(),
-            blackholes: (Ipv4Addr::LOCALHOST, Ipv6Addr::LOCALHOST)
-        }
-    }
-}
 
 #[derive(Debug)]
 /// The custom error structure
@@ -82,10 +56,9 @@ pub enum DnsBlrsErrorKind {
     InvalidMessageType,
     InvalidRule,
     NotImpl,
-    SetupBinding,
-    BuildConfig,
+    SocketBinding,
     RequestRefused,
-    LogicError,
+    ErroneousRData,
     // This custom error type wraps the external crates errors
     // to enable proper error propagation
     ExternCrateError(ExternCrateErrorKind),

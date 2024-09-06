@@ -1,45 +1,59 @@
-use crate::{structs::{Config, DnsBlrsResult, Confile, DnsBlrsError, DnsBlrsErrorKind}, Handler};
+use crate::{
+    filtering::Data, resolver, Handler,
+    errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult}
+};
 
-use std::{fs, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, process::exit, str::FromStr, time::Duration};
+use std::{
+    fs, process::exit, str::FromStr, time::Duration,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}
+};
+use hickory_resolver::TokioAsyncResolver;
 use hickory_server::ServerFuture;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use tokio::net::{TcpListener, UdpSocket};
 use tracing::{info, error, warn};
+use serde::Deserialize;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Reads the config file
-pub fn read_confile(file_name: &str)
--> Confile {
-    let confile: Confile = {
-        let data = match fs::read_to_string(file_name) {
-            Ok(data) => data,
-            Err(err) => {
-                error!("Error reading \"dnsblrsd\": {err}");
-                exit(78) // CONFIG
-            }
-        };
-        match serde_json::from_str(&data) {
-            Ok(confile) => confile,
-            Err(err) => {
-                error!("Error deserializing \"dnsblrsd.conf\" data: {err}");
-                exit(78) // CONFIG
-            }
-        }
-    };
-
-    info!("daemon_id is \"{}\"", confile.daemon_id);
-    info!("{}: Redis server: {}", confile.daemon_id, confile.redis_address);
-    
-    confile
+#[derive(Deserialize)]
+/// The initial config file
+pub struct Confile {
+    pub daemon_id: String,
+    pub redis_address: String
 }
 
-/// Checks the config blackhole ips
-fn check_blackhole_ips(blackholes: Vec<String>)
+/// Reads the config file
+pub fn read_confile(file_name: &str)
+-> (String, String) {
+    let data = match fs::read_to_string(file_name) {
+        Ok(data) => data,
+        Err(err) => {
+            error!("Error reading 'dnsblrsd': {err}");
+            exit(78) // CONFIG
+        }
+    };
+    let confile: Confile = match serde_json::from_str(data.as_str()) {
+        Ok(confile) => confile,
+        Err(err) => {
+            error!("Error deserializing 'dnsblrsd.conf' data: {err}");
+            exit(78) // CONFIG
+        }
+    };
+    let (daemon_id, redis_address) = (confile.daemon_id, confile.redis_address);
+
+    info!("'daemon_id' is '{daemon_id}'");
+    info!("{daemon_id}: Redis server: {redis_address}");
+    
+    (daemon_id, redis_address)
+}
+
+/// Checks the config sink ips
+fn check_sinks_ips(sinks: Vec<String>)
 -> Option<(Ipv4Addr, Ipv6Addr)> {
-    Some(match IpAddr::from_str(blackholes.first().unwrap()).ok()? {
-        IpAddr::V4(ipv4) => (ipv4, Ipv6Addr::from_str(blackholes.get(1).unwrap()).ok()?),
-        IpAddr::V6(ipv6) => (Ipv4Addr::from_str(blackholes.get(1).unwrap()).ok()?, ipv6)
+    Some(match IpAddr::from_str(sinks.first().unwrap()).ok()? {
+        IpAddr::V4(ipv4) => (ipv4, Ipv6Addr::from_str(sinks.get(1).unwrap()).ok()?),
+        IpAddr::V6(ipv6) => (Ipv4Addr::from_str(sinks.get(1).unwrap()).ok()?, ipv6)
     })
 }
 
@@ -47,18 +61,18 @@ fn check_blackhole_ips(blackholes: Vec<String>)
 fn config_forwarders(
     daemon_id: &str,
     recvd_forwarders: Vec<String>
-) -> DnsBlrsResult<Vec<SocketAddr>> {
+) -> Option<Vec<SocketAddr>> {
     let recvd_forwarder_cnt = recvd_forwarders.len();
     if recvd_forwarder_cnt == 0 {
-        error!("{daemon_id}: Forwarder vector received is empty");
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
+        error!("{daemon_id}: No forwarders received");
+        return None
     }
     info!("{daemon_id}: Received {recvd_forwarder_cnt} forwarders");
 
     let valid_forwarders: Vec<SocketAddr> = recvd_forwarders.into_iter().filter_map(|socket_addr_strg| {
         socket_addr_strg.parse::<SocketAddr>().map_or_else(
             |err| {
-                warn!("{daemon_id}: Forwarder: \"{socket_addr_strg}\" is not valid: {err:?}");
+                warn!("{daemon_id}: Forwarder: '{socket_addr_strg}' is not valid: {err:?}");
                 None
             },
             Some
@@ -71,23 +85,23 @@ fn config_forwarders(
         info!("{daemon_id}: All {valid_forwarder_cnt} forwarders are valid");
     } else if valid_forwarder_cnt == 0 {
         error!("{daemon_id}: No forwarder is valid");
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
+        return None
     } else {
         warn!("{daemon_id}: {valid_forwarder_cnt} out of {recvd_forwarder_cnt} forwarders are valid");
     }
 
-    Ok(valid_forwarders)
+    Some(valid_forwarders)
 }
 
 /// Parses config binds
 fn parse_binds(
     daemon_id: &str,
     recvd_binds: Vec<String>
-) -> DnsBlrsResult<Vec<(String, SocketAddr)>> {
+) -> Option<Vec<(String, SocketAddr)>> {
     let recvd_bind_cnt = recvd_binds.len();
     if recvd_bind_cnt == 0 {
         error!("{daemon_id}: No bind received");
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig))
+        return None
     }
     info!("{daemon_id}: Received {recvd_bind_cnt} binds");
 
@@ -97,25 +111,25 @@ fn parse_binds(
         let proto = match splits.next() {
             Some(proto) => proto.to_lowercase(),
             None => {
-                warn!("{daemon_id}: Bind: \"{bind}\" is not valid");
+                warn!("{daemon_id}: Bind: '{bind}' is not valid");
                 continue
             }
         };
-        if proto != "tcp" || proto != "udp" {
-            warn!("{daemon_id}: Bind: \"{bind}\": Protocol is not valid");
+        if proto != "tcp" && proto != "udp" {
+            warn!("{daemon_id}: Bind: '{bind}': Protocol is not valid");
             continue
         }
         let Some(socket_addr_strg) = splits.next() else {
-            warn!("{daemon_id}: Bind: \"{bind}\" is not valid");
+            warn!("{daemon_id}: Bind: '{bind}' is not valid");
             continue
         };
         let Ok(socket_addr) = socket_addr_strg.parse::<SocketAddr>() else {
-            warn!("{daemon_id}: Bind: \"{bind}\": Socket is not valid");
+            warn!("{daemon_id}: Bind: '{bind}': Socket is not valid");
             continue
         };
 
         valid_binds.push((proto, socket_addr));
-    };
+    }
 
     let valid_bind_cnt = valid_binds.len();
     // At least 1 bind must be valid
@@ -123,81 +137,91 @@ fn parse_binds(
         info!("{daemon_id}: All {valid_bind_cnt} binds are valid");
     } else if valid_bind_cnt == 0 {
         error!("{daemon_id}: No bind is valid");
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBinding))
+        return None
     } else {
         warn!("{daemon_id}: {valid_bind_cnt} out of {recvd_bind_cnt} total binds are valid");
     }
 
-    Ok(valid_binds)
+    Some(valid_binds)
 }
 
-/// Builds server config
-pub async fn build(
+/// Builds the resolver
+pub async fn build_resolver(
     daemon_id: &str,
     redis_manager: &mut ConnectionManager
-) -> DnsBlrsResult<(Config, Vec<SocketAddr>, Vec<(String, SocketAddr)>)> {
-    let mut config = Config::default();
-
-    // Fatal config errors are checked first for early returns
-
-    let recvd_forwarders: Vec<String> = redis_manager.smembers(format!("DBL;forwarders;{daemon_id}")).await
-        .map_err(|err| {
-            error!("{daemon_id}: Error retrieving forwarders: {err:?}");
-            DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
-        })?;
-    let forwarders = config_forwarders(daemon_id, recvd_forwarders)?;
-
-    let recvd_binds: Vec<String> = redis_manager.smembers(format!("DBL;binds;{daemon_id}")).await
-        .map_err(|err| {
-            error!("{daemon_id}: Error retrieving binds: {err:?}");
-            DnsBlrsError::from(DnsBlrsErrorKind::BuildConfig)
-        })?;
-    let binds = parse_binds(daemon_id, recvd_binds)?;
-
-    // Errors shouldn't be fatal anymore
-    // If an error occurs beyond this point, the server will not filter
-
-    let filtering_warn_msg = "The server will not filter any request";
-    let blackholes: Vec<String> = match redis_manager.smembers(format!("DBL;blackholes;{daemon_id}")).await {
-        Ok(blackholes) => blackholes,
+) -> Option<TokioAsyncResolver> {
+    let recvd_forwarders: Vec<String> = match redis_manager.smembers(format!("DBL;forwarders;{daemon_id}")).await {
+        Ok(forwarders) => forwarders,
         Err(err) => {
-            warn!("{daemon_id}: Error retrieving blackholes: {err:?}");
-            warn!("{daemon_id}: {filtering_warn_msg}");
-            return Ok((config, forwarders, binds))
+            error!("{daemon_id}: Error retrieving forwarders: {err:?}");
+            return None
         }
     };
-    // If we haven't received exactly 2 blackholes, there is an issue with the configuration
-    if blackholes.len() != 2 {
-        warn!("{daemon_id}: Amount of blackholes received were not 2 (must have v4 and v6)");
-        warn!("{daemon_id}: {filtering_warn_msg}");
-        return Ok((config, forwarders, binds))
+    let forwarders = config_forwarders(daemon_id, recvd_forwarders)?;
+
+    Some(resolver::build(daemon_id, forwarders))
+}
+
+/// Builds the server binds
+pub async fn build_binds(
+    daemon_id: &str,
+    redis_manager: &mut ConnectionManager
+) -> Option<Vec<(String, SocketAddr)>> {
+    let recvd_binds: Vec<String> = match redis_manager.smembers(format!("DBL;binds;{daemon_id}")).await {
+        Ok(binds) => binds,
+        Err(err) => {
+            error!("{daemon_id}: Error retrieving binds: {err:?}");
+            return None
+        }
+    };
+    let binds = parse_binds(daemon_id, recvd_binds)?;
+
+    Some(binds)
+}
+
+/// Attempts to setup the config required for filtering requests
+pub async fn setup_filtering(
+    daemon_id: &str,
+    redis_manager: &mut ConnectionManager
+) -> Option<Data> {
+    let sinks: Vec<String> = match redis_manager.smembers(format!("DBL;sinks;{daemon_id}")).await {
+        Ok(sinks) => sinks,
+        Err(err) => {
+            warn!("{daemon_id}: Error retrieving sinks: {err:?}");
+            return None
+        }
+    };
+    // If we haven't received exactly 2 sinks, there is an issue with the configuration
+    if sinks.len() != 2 {
+        warn!("{daemon_id}: Amount of sinks received were not 2 (must have v4 and v6)");
+        return None
     }
-    let Some((blackhole_ipv4, blackhole_ipv6)) = check_blackhole_ips(blackholes) else {
-        warn!("{daemon_id}: The blackholes are not properly configured, there must be one IPv4 and one IPv6");
-        return Ok((config, forwarders, binds))
+    let Some((sink_ipv4, sink_ipv6)) = check_sinks_ips(sinks) else {
+        warn!("{daemon_id}: The sinks are not properly configured, there must be one IPv4 and one IPv6");
+        return None
     };
 
     let filters: Vec<String> = match redis_manager.smembers(format!("DBL;filters;{daemon_id}")).await {
         Ok(filters) => filters,
         Err(err) => {
             warn!("{daemon_id}: Error retrieving filters: {err:?}");
-            warn!("{daemon_id}: {filtering_warn_msg}");
-            return Ok((config, forwarders, binds))
+            return None
         }
     };
     // If at least 1 filter is received, the server will filter the requests
     let filters_cnt: usize = filters.len();
     if filters_cnt == 0 {
         warn!("{daemon_id}: No filter received");
-        warn!("{daemon_id}: {filtering_warn_msg}");
-        return Ok((config, forwarders, binds))
+        return None
     }
     info!("{daemon_id}: Received {filters_cnt} filters");
 
-    config.blackholes = (blackhole_ipv4, blackhole_ipv6);
-    config.is_filtering = true;
-    config.filters = filters;
-    Ok((config, forwarders, binds))
+    let filtering_data = Data {
+        sinks: (sink_ipv4, sink_ipv6),
+        filters
+    };
+    info!("{daemon_id}: Filtering data is valid");
+    Some(filtering_data)
 }
 
 /// Setups server binds
@@ -214,14 +238,14 @@ pub async fn setup_binds(
                 if let Ok(socket) = UdpSocket::bind(socket_addr).await {
                     server.register_socket(socket);
                 } else {
-                    warn!("{daemon_id}: Failed to bind: \"{socket_addr}\" for UDP");
+                    warn!("{daemon_id}: Failed to bind: '{socket_addr}' for UDP");
                 }
             },
             "tcp" => {
                 if let Ok(listener) = TcpListener::bind(socket_addr).await {
                     server.register_listener(listener, TCP_TIMEOUT);
                 } else {
-                    warn!("{daemon_id}: Failed to bind: \"{socket_addr}\" for TCP");
+                    warn!("{daemon_id}: Failed to bind: '{socket_addr}' for TCP");
                 }
             },
             _ => unreachable!("Socket protocol should have been filtered out earlier")
@@ -234,7 +258,7 @@ pub async fn setup_binds(
         info!("{daemon_id}: All {successful_bind_cnt} binds were set");
     } else if successful_bind_cnt == 0 {
         error!("{daemon_id}: No bind was set");
-        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SetupBinding))
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::SocketBinding))
     } else {
         warn!("{daemon_id}: {successful_bind_cnt} out of {bind_cnt} total binds were set");
     }

@@ -1,31 +1,23 @@
-use crate::{
-    DAEMON_ID,
-    structs::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind}
-};
+use crate::errors::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind};
 
 use std::net::SocketAddr;
-use hickory_client::{
-    op::ResponseCode,
-    rr::RecordType,
-};
-use hickory_proto::rr::{Record, RData};
+use hickory_client::{op::ResponseCode, rr::RecordType};
+use hickory_proto::{op::LowerQuery, rr::{RData, Record}};
 use hickory_resolver::{
-    config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol},
-    TokioAsyncResolver,
-    IntoName,
-    error::{ResolveErrorKind, ResolveError}
+    IntoName, TokioAsyncResolver,
+    config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
+    error::{ResolveError, ResolveErrorKind}
 };
-use hickory_server::server::Request;
 use tracing::info;
 
 /// Builds the resolver that will forward the requests to other DNS servers
-pub fn build(forwarders: Vec<SocketAddr>)
--> TokioAsyncResolver {
+pub fn build(
+    daemon_id: &str,
+    forwarders: Vec<SocketAddr>
+) -> TokioAsyncResolver {
     let mut resolver_config = ResolverConfig::new();
     // Local domain is set as resolver's domain
     resolver_config.domain();
-
-    let daemon_id = DAEMON_ID.get().expect("Could not fetch daemon_id");
 
     for socket_addr in forwarders {
         let ns_udp = NameServerConfig::new(socket_addr, Protocol::Udp);
@@ -35,15 +27,10 @@ pub fn build(forwarders: Vec<SocketAddr>)
     }
     
     let mut resolver_opts: ResolverOpts = ResolverOpts::default();
-    
     // We do not want the resolver to send concurrent queries,
     // as it would increase network load for little to no speed benefit
     resolver_opts.num_concurrent_reqs = 0;
-
-    let resolver = TokioAsyncResolver::tokio(
-        resolver_config,
-        resolver_opts
-    );
+    let resolver = TokioAsyncResolver::tokio(resolver_config, resolver_opts);
 
     info!("{daemon_id}: Resolver built");
     resolver
@@ -63,45 +50,45 @@ fn resolve_err_kind(err: ResolveError)
 
 /// Uses the resolver to retrieve the correct records
 pub async fn get_records(
-    request: &Request,
-    resolver: TokioAsyncResolver
+    query: &LowerQuery,
+    resolver: &TokioAsyncResolver
 ) -> DnsBlrsResult<Vec<Record>> {
     let mut records: Vec<Record> = vec![];
 
-    let name = request.query().name().into_name()
+    let name = query.name().into_name()
         .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?;
 
-    match request.query().query_type() {
+    match query.query_type() {
         RecordType::A => if let Ok(lookup) = resolver.ipv4_lookup(name.clone()).await
-        .map_err(resolve_err_kind) {
-            for a in lookup {
-                records.push(Record::from_rdata(name.clone(), 3600, RData::A(a)));
-            }
-        },
+            .map_err(resolve_err_kind) {
+                for a in lookup {
+                    records.push(Record::from_rdata(name.clone(), 3600, RData::A(a)));
+                }
+            },
         RecordType::AAAA => if let Ok(lookup) = resolver.ipv6_lookup(name.clone()).await
-        .map_err(resolve_err_kind) {
-            for aaaa in lookup {
-                records.push(Record::from_rdata(name.clone(), 3600, RData::AAAA(aaaa)));
-            }
-        },
+            .map_err(resolve_err_kind) {
+                for aaaa in lookup {
+                    records.push(Record::from_rdata(name.clone(), 3600, RData::AAAA(aaaa)));
+                }
+            },
         RecordType::TXT => if let Ok(lookup) = resolver.txt_lookup(name.clone()).await
-        .map_err(resolve_err_kind) {
-            for txt in lookup {
-                records.push(Record::from_rdata(name.clone(), 3600, RData::TXT(txt)));
-            }
-        },
+            .map_err(resolve_err_kind) {
+                for txt in lookup {
+                    records.push(Record::from_rdata(name.clone(), 3600, RData::TXT(txt)));
+                }
+            },
         RecordType::SRV => if let Ok(lookup) = resolver.srv_lookup(name.clone()).await
-        .map_err(resolve_err_kind) {
-            for srv in lookup {
-                records.push(Record::from_rdata(name.clone(), 3600, RData::SRV(srv)));
-            }
-        },
+            .map_err(resolve_err_kind) {
+                for srv in lookup {
+                    records.push(Record::from_rdata(name.clone(), 3600, RData::SRV(srv)));
+                }
+            },
         RecordType::MX => if let Ok(lookup) = resolver.mx_lookup(name.clone()).await
-        .map_err(resolve_err_kind) {
-            for mx in lookup {
-                records.push(Record::from_rdata(name.clone(), 3600, RData::MX(mx)));
-            }
-        },
+            .map_err(resolve_err_kind) {
+                for mx in lookup {
+                    records.push(Record::from_rdata(name.clone(), 3600, RData::MX(mx)));
+                }
+            },
         RecordType::PTR => {
             let ip = name.parse_arpa_name() 
                 .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?

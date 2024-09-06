@@ -1,3 +1,7 @@
+# 1.2.0
+
++ Refactored code
+
 # 1.1.3
 
 + Isolated functions in respective files and config changes

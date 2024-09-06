@@ -1,3 +1,7 @@
+# 1.0.4
+
++ Optimizations and compatibility to new dnsblrsd
+
 # 1.0.3
 
 + Cleaned code

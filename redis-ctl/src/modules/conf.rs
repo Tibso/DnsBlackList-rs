@@ -1,71 +1,71 @@
-use crate::Confile;
+use crate::VERSION;
 
-use std::{
-    process::ExitCode,
-    net::IpAddr
-};
+use std::{process::ExitCode, net::IpAddr};
 use redis::{Commands, Connection, RedisResult};
 
-/// Displays the daemon's configuration
+/// Displays the daemon conf and 'redis-ctl' version
 pub fn show (
-    mut connection: Connection,
-    confile: &Confile
+    connection: &mut Connection,
+    daemon_id: &str,
+    redis_address: &str
 ) -> RedisResult<ExitCode> {
-    println!("{confile:#?}");
+    println!("'redis-ctl' version {VERSION}\n");
+    println!("Confile {{\n    \"daemon_id\": \"{daemon_id}\"");
+    println!("    \"redis_address\": \"{redis_address}\"\n}}\n");
 
-    let binds: Vec<String> = connection.smembers(format!("DBL;binds;{}", confile.daemon_id))?;
+    let binds: Vec<String> = connection.smembers(format!("DBL;binds;{daemon_id}"))?;
     if binds.is_empty() {
-        println!("No bind is configured!");
+        println!("No bind is configured\n");
     } else {
-        println!("Binds {binds:#?}");
+        println!("Binds {binds:#?}\n");
     }
 
-    let forwarders: Vec<String> = connection.smembers(format!("DBL;forwarders;{}", confile.daemon_id))?;
+    let forwarders: Vec<String> = connection.smembers(format!("DBL;forwarders;{daemon_id}"))?;
     if forwarders.is_empty() {
-        println!("No forwarder is configured!");
+        println!("No forwarder is configured\n");
     } else {
-        println!("Forwarders {forwarders:#?}");
+        println!("Forwarders {forwarders:#?}\n");
     }
 
-    let filters: Vec<String> = connection.smembers(format!("DBL;filters;{}", confile.daemon_id))?;
+    let filters: Vec<String> = connection.smembers(format!("DBL;filters;{daemon_id}"))?;
     if filters.is_empty() {
-        println!("No filter is configured!");
+        println!("No filter is configured\n");
     } else {
-        println!("Filters {filters:#?}");
+        println!("Filters {filters:#?}\n");
     }
 
-    let blackholes: Vec<String> = connection.smembers(format!("DBL;blackholes;{}", confile.daemon_id))?;
-    if blackholes.is_empty() {
-        println!("No blackholes are configured!");
+    let sinks: Vec<String> = connection.smembers(format!("DBL;sinks;{daemon_id}"))?;
+    if sinks.is_empty() {
+        println!("No sinks are configured\n");
     } else {
-        println!("Blackholes {blackholes:#?}");
+        println!("Sinks {sinks:#?}\n");
     }
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// Reconfigures the blackholes of the daemon's configuration
-pub fn set_blackholes (
-    mut connection: Connection,
+/// Reconfigures the sinks of the daemon conf
+pub fn set_sinks (
+    connection: &mut Connection,
     daemon_id: &str,
-    blackhole_ips: Vec<String>
+    sinks: Vec<String>
 ) -> RedisResult<ExitCode> {
-    if blackhole_ips.len() != 2 {
-        println!("2 blackholes must be provided!");
+    if sinks.len() != 2 {
+        println!("2 sinks must be provided");
         return Ok(ExitCode::from(2))
     }
 
-    connection.del(format!("DBL;blackholes;{daemon_id}"))?;
+    let () = connection.del(format!("DBL;sinks;{daemon_id}"))?;
 
-    let add_count: u8 = connection.sadd(format!("DBL;blackholes;{daemon_id}"), blackhole_ips)?;
-    println!("Added {add_count} blackhole(s) to the daemon's configuration");
+    let add_count: u8 = connection.sadd(format!("DBL;sinks;{daemon_id}"), sinks)?;
+    println!("{add_count} sinks added to the daemon conf");
         
     Ok(ExitCode::SUCCESS)
 }
 
-/// Adds blocked IPs to the daemon's configuration
+/// Adds blocked IPs to the daemon conf
 pub fn add_blocked_ips (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     ips: Vec<String>
 ) -> RedisResult<ExitCode> {
@@ -77,13 +77,14 @@ pub fn add_blocked_ips (
     }
 
     let add_count: u64 = connection.sadd(format!("DBL;blocked-ips;{daemon_id}"), ips)?;
-    println!("Added {add_count} IP(s) to the IP blacklist");
+    println!("{add_count} IP(s) added to the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Removes blocked IPs from the daemon conf
 pub fn remove_blocked_ips (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     ips: Vec<String>
 ) -> RedisResult<ExitCode> {
@@ -95,77 +96,79 @@ pub fn remove_blocked_ips (
     }
 
     let del_count: u64 = connection.srem(format!("DBL;blocked-ips;{daemon_id}"), ips)?;
-    println!("Removed {del_count} IP(s) from the IP blacklist");
+    println!("{del_count} IP(s) removed from the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// Adds binds to the daemon's configuration
+/// Adds binds to the daemon conf
 pub fn add_binds (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     binds: Vec<String>
 ) -> RedisResult<ExitCode> {
     let add_count: u32 = connection.sadd(format!("DBL;binds;{daemon_id}"), binds)?;
-    println!("Added {add_count} bind(s) to the daemon's configuration");
+    println!("{add_count} bind(s) added to the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Removes binds from the daemon conf
 pub fn remove_binds (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     binds: Vec<String>
 ) -> RedisResult<ExitCode> {
     let del_count: u32 = connection.srem(format!("DBL;binds;{daemon_id}"), binds)?;
-    println!("Removed {del_count} bind(s) from the daemon's configuration");
+    println!("{del_count} bind(s) removed from the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// Add new forwarders to the daemon's configuration
+/// Add new forwarders to the daemon conf
 pub fn add_forwarders (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     forwarders: Vec<String>
 ) -> RedisResult<ExitCode> {
     let add_count: u64 = connection.sadd(format!("DBL;forwarders;{daemon_id}"), forwarders)?;
-    println!("Added {add_count} forwarder(s) to the daemon's configuration");
+    println!("{add_count} forwarder(s) added to the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Removes forwarders from the daemon conf
 pub fn remove_forwarders (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     forwarders: Vec<String>
 ) -> RedisResult<ExitCode> {
     let del_count: u64 = connection.srem(format!("DBL;forwarders;{daemon_id}"), forwarders)?;
-    println!("Removed {del_count} forwarder(s) from the daemon's configuration");
+    println!("{del_count} forwarder(s) removed from the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// Adds filters to the daemon's configuration
+/// Adds filters to the daemon conf
 pub fn add_filters (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     filters: Vec<String>
 ) -> RedisResult<ExitCode> {
     let add_count: u64 = connection.sadd(format!("DBL;filters;{daemon_id}"), filters)?;
-    println!("Added {add_count} filter(s) to the daemon's configuration");
+    println!("{add_count} filter(s) added to the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// Removes filters from the daemon's configuration
+/// Removes filters from the daemon conf
 pub fn remove_filters (
-    mut connection: Connection,
+    connection: &mut Connection,
     daemon_id: &str,
     filters: Vec<String>
 ) -> RedisResult<ExitCode> {
     let remove_count: u64 = connection.srem(format!("DBL;filters;{daemon_id}"), filters)?;
-    println!("Removed {remove_count} filter(s) from the daemon's configuration");
+    println!("{remove_count} filter(s) removed from the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }

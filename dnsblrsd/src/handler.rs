@@ -1,6 +1,7 @@
 use crate::{
-    structs::{Config, DnsBlrsResult, DnsBlrsErrorKind, ExternCrateErrorKind, DnsBlrsError},
-    resolver, filtering, DAEMON_ID, redis_mod
+    errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind},
+    filtering::{filter, FilteringConfig},
+    redis_mod, resolver
 };
 
 use std::sync::Arc;
@@ -11,7 +12,8 @@ use hickory_server::{
     authority::MessageResponseBuilder
 };
 use hickory_proto::rr::RecordType;
-use arc_swap::ArcSwap;
+use arc_swap::ArcSwapAny;
+use redis::aio::ConnectionManager;
 use tracing::{error, warn};
 use async_trait::async_trait;
 
@@ -22,9 +24,9 @@ impl RequestHandler for Handler {
         request: &Request,
         mut response: R
     ) -> ResponseInfo {
-        match self.handle_request(request, response.clone()).await {
-            // The successfully request's info is returned to the subscriber to be displayed
-            Ok(info) => info,
+        match self.try_handle_request(request, response.clone()).await {
+            // Successfully request info returned to the subscriber to be displayed
+            Ok(response_info) => response_info,
             Err(err) => {
                 let builder = MessageResponseBuilder::from_message_request(request);
 
@@ -32,23 +34,21 @@ impl RequestHandler for Handler {
                 header.set_authoritative(false);
                 header.set_recursion_available(true);
 
-                let daemon_id = DAEMON_ID.get().expect("Could not fetch daemon_id");
-
                 let request_info = request.request_info();
-                let msg_stats = format!("{daemon_id}: request:{} src:{}://{} QUERY:{} | ",
-                    request.id(), request_info.protocol, request_info.src, request_info.query
+                let msg_stats = format!("{}: request:{} src:{}://{} QUERY:{} | ",
+                    self.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query
                 );
                 match err.kind() {
                     DnsBlrsErrorKind::InvalidOpCode => {
-                        warn!("{msg_stats}An \"InvalidOpCode\" error occured");
+                        warn!("{msg_stats}An 'InvalidOpCode' error occured");
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::InvalidMessageType => {
-                        warn!("{msg_stats}An \"InvalidMessageType\" error occured");
+                        warn!("{msg_stats}An 'InvalidMessageType' error occured");
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::RequestRefused => {
-                        error!("{msg_stats}A resolver's request was refused by a forwarder");
+                        error!("{msg_stats}Resolver request was refused by a forwarder");
                         header.set_response_code(ResponseCode::Refused);
                     },
                     DnsBlrsErrorKind::InvalidRule => {
@@ -56,11 +56,11 @@ impl RequestHandler for Handler {
                         header.set_response_code(ResponseCode::ServFail);
                     },
                     DnsBlrsErrorKind::NotImpl => {
-                        warn!("{msg_stats}This \"query_type\" is not implemented");
+                        warn!("{msg_stats}This 'query_type' is not implemented");
                         header.set_response_code(ResponseCode::NotImp);
-                    }
-                    DnsBlrsErrorKind::LogicError => {
-                        warn!("{msg_stats}A logic error occured");
+                    },
+                    DnsBlrsErrorKind::ErroneousRData => {
+                        warn!("{msg_stats}Erroneous RData was received from a forwarder");
                         header.set_response_code(ResponseCode::ServFail);
                     },
                     DnsBlrsErrorKind::ExternCrateError(extern_crate_errorkind) => {
@@ -72,12 +72,12 @@ impl RequestHandler for Handler {
                             ExternCrateErrorKind::IO(err) => 
                                 error!("{msg_stats}Could not send response: {err}"),
                             ExternCrateErrorKind::SystemTime(err) =>
-                                error!("{msg_stats}A \"SystemTimeError\" occured: {err}"),
+                                error!("{msg_stats}A 'SystemTimeError' occured: {err}"),
                             ExternCrateErrorKind::Proto(err) =>
-                                error!("{msg_stats}A \"ProtoError\" occured: {err}")
+                                error!("{msg_stats}A 'ProtoError' occured: {err}")
                         }
                         header.set_response_code(ResponseCode::ServFail);
-                    }
+                    },
                     _ => unreachable!("Unfinished implementation of new error kind")
                 }
 
@@ -87,20 +87,20 @@ impl RequestHandler for Handler {
         }
     }
 }
-
+    
 pub struct Handler {
-    pub redis_manager: redis::aio::ConnectionManager,
-    pub arc_config: Arc<ArcSwap<Config>>,
-    pub arc_resolver: Arc<TokioAsyncResolver>
+    pub daemon_id: String,
+    pub redis_manager: ConnectionManager,
+    pub filtering_config: Arc<ArcSwapAny<Arc<FilteringConfig>>>,
+    pub resolver: Arc<TokioAsyncResolver>
 }
 impl Handler {
-    /// Will run to handle a request on a designated thread
-    async fn handle_request <R: ResponseHandler> (
+    /// Will try to handle a request on a designated thread
+    async fn try_handle_request <R: ResponseHandler> (
         &self,
         request: &Request,
         mut response: R
     ) -> DnsBlrsResult<ResponseInfo> {
-        // Filters out unwanted query and message types
         if request.op_code() != OpCode::Query {
             return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidOpCode))
         }
@@ -115,27 +115,33 @@ impl Handler {
         header.set_authoritative(false);
         header.set_recursion_available(true);
 
-        // Borrows the configuration from the thread-safe variable
-        let config = self.arc_config.load();
-        // Copies the resolver out of the thread-safe variable
-        let resolver = self.arc_resolver.as_ref().clone();
+        // Copies from the thread-safe handler
         let mut redis_manager = self.redis_manager.clone();
-        
+        let filtering_config = self.filtering_config.clone().load();
+        let filtering_config = filtering_config.as_ref();
+        let resolver = self.resolver.clone();
+        let resolver = resolver.as_ref();
+        let daemon_id = self.daemon_id.as_ref();
+
+        let query = request.query();
+        let request_src_ip = request.request_info().src.ip();
+
         // Write general stats about the source IP
-        redis_mod::write_stats_query(&mut redis_manager, request.request_info().src.ip()).await?;
+        redis_mod::write_stats_request(&mut redis_manager, daemon_id, request_src_ip).await?;
 
         // Filters the domain name if the request is of RecordType A or AAAA
-        let records = if config.is_filtering {
-            match request.query().query_type() {
-                RecordType::A => filtering::filter(request, &config, &mut redis_manager, resolver).await?,
-                RecordType::AAAA => filtering::filter(request, &config, &mut redis_manager, resolver).await?,
-                _ => resolver::get_records(request, resolver).await?
-            }
-        } else {
-            resolver::get_records(request, resolver).await?
+        let records = match filtering_config.is_filtering {
+            true => match request.query().query_type() {
+                RecordType::A | RecordType::AAAA => {
+                    let filtering_data = filtering_config.data.as_ref().expect("'filtering_data' should never be 'None' here");
+                    filter(daemon_id, query, request_src_ip, filtering_data, resolver, &mut redis_manager).await?
+                },
+                _ => resolver::get_records(query, resolver).await?
+            },
+            false => resolver::get_records(query, resolver).await?
         };
 
-        let message = builder.build(header, &records, &[], &[], &[]);
+        let message = builder.build(header, records.iter(), &[], &[], &[]);
         response.send_response(message).await
             .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))))
     }
