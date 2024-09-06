@@ -28,7 +28,7 @@ pub enum Commands {
     /// Add a new rule
     AddRule {
         filter: String,
-        src: String,
+        source: String,
         domain: String,
         ip1: Option<String>,
         ip2: Option<String>
@@ -60,13 +60,13 @@ pub enum Commands {
     },
 
     /// Update rules automatically using the "dnsblrs_sources.json" file
-    AutoFeed {path_to_srcs: PathBuf},
+    AutoFeed {path_to_sources: PathBuf},
     
     /// Feed a list of domains to a matchclass
     Feed {
         path_to_list: PathBuf,
         filter: String,
-        src: String
+        source: String
     },
 
     /// Display stats about IP addresses that match a pattern

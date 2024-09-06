@@ -109,14 +109,14 @@ fn main() -> ExitCode {
         Commands::EnableRules { filter, pattern }
             => rules::enable(&mut connection, filter.as_str(), pattern.as_str()),
 
-        Commands::AutoFeed { path_to_srcs }
-            => feed::auto(&mut connection, &path_to_srcs),
+        Commands::AutoFeed { path_to_sources }
+            => feed::auto(&mut connection, &path_to_sources),
 
-        Commands::Feed { path_to_list, filter, src }
-            => feed::add_to_filter(&mut connection, &path_to_list, filter.as_str(), src.as_str()),
+        Commands::Feed { path_to_list, filter, source }
+            => feed::add_to_filter(&mut connection, &path_to_list, filter.as_str(), source.as_str()),
 
-        Commands::AddRule { filter, src, domain, ip1, ip2 }
-            => rules::add(&mut connection, filter.as_str(), src.as_str(), domain.as_str(), ip1, ip2),
+        Commands::AddRule { filter, source, domain, ip1, ip2 }
+            => rules::add(&mut connection, filter.as_str(), source.as_str(), domain.as_str(), ip1, ip2),
 
         Commands::DelRule { filter, domain, ip }
             => rules::delete(&mut connection, filter.as_str(), domain.as_str(), ip),

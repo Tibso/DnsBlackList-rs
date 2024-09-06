@@ -56,7 +56,7 @@ The resolver keeps listening for signals on a side-task. These signals can be se
 
 | Signal | Description |
 |--------|-------------|
-| SIGHUP | Reloads the daemon's configuration from the Redis resolver |
+| SIGHUP | Reloads the daemon's filtering data from the Redis resolver |
 | SIGUSR1 | Switches ON/OFF the resolver's filtering |
 | SIGUSR2 | Clears the resolver's cache |
 
@@ -70,8 +70,8 @@ The **sockets** that the resolver's **daemon** will attempt to **bind to**.
 
 + TCP=127.0.0.1:53
 + UDP=127.0.0.1:53
-+ TCP=::1:53
-+ UDP=::1:53
++ TCP=[::1] :53
++ UDP=[::1] :53
 
 ### **Forwarders**
 
@@ -82,11 +82,11 @@ The **DNS forwarders** that will **handle** the **forwarded requests**.
 + 203.0.113.0.1:53
 + [::1] :53
 
-### **Blackholes**
+### **Sinks**
 
 The **default IPs** that will be **answered** to **blocked requests**. These IPs are used unless the matched rule has a specific IP configured as answer. The order does not matter.
 
-[SET] DBL;blackhole-ips;*[DAEMON_ID]*
+[SET] DBL;sinks;*[DAEMON_ID]*
 
 + 127.0.0.1
 + ::1
@@ -202,27 +202,27 @@ Lastly, the `systemctl` **command** is used to **configure** the **service**:
 
 # **Redis-ctl**
 
-This is a command-line tool used to modify the Redis blacklist.
-
 ```
+This is a command-line tool used to manipulate the Redis blacklist
+
 Usage: redis-ctl <PATH_TO_CONFILE> <COMMAND>
 
 Commands:
-  show-conf      Display the daemon's configuration
+  show-conf      Display the daemon's configuration and the 'redis-ctl' version
   edit-conf      Reconfigure a parameter of the daemon's configuration
   add-rule       Add a new rule
-  del-rule       Delete a rule or one of its two qtypes
+  del-rule       Delete a rule or either of its v4 or v6 IPs
   search-rules   Search for rules using a pattern
   disable-rules  Disable rules that match a pattern
   enable-rules   Enable rules that match a pattern
-  auto-feed      Update rules automatically using the "dnsblrsd_sources.json" file
+  auto-feed      Update rules automatically using the "dnsblrs_sources.json" file
   feed           Feed a list of domains to a matchclass
   show-stats     Display stats about IP addresses that match a pattern
   clear-stats    Clear stats about IP addresses that match a pattern
   help           Print this message or the help of the given subcommand(s)
 
 Arguments:
-  <PATH_TO_CONFILE>  Path to "dnsblrsd.conf" is required
+  <PATH_TO_CONFILE>  Path to dnsblrsd.conf is required
 
 Options:
   -h, --help  Print help
@@ -288,7 +288,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> disable-rules <FILTER> <PATTERN>
 
 **Disables** all the **rules** that match a **pattern**.
 
-Redis' **wildcards** (*?) can be used on the pattern.
+Redis **wildcards** (*?) can be used on the pattern.
 
 ### ***enable-rules***
 
@@ -298,7 +298,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> enable-rules <FILTER> <PATTERN>
 
 **Enables** all the **rules** that match a **pattern**.
 
-Redis' **wildcards** (*?) can be used on the pattern.
+Redis **wildcards** (*?) can be used on the pattern.
 
 ### ***auto-feed***
 
@@ -340,7 +340,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> show-stats <IP_PATTERN>
 
 **Displays** all **stats** that match an IP **pattern**.
 
-Redis' **wildcards** (*?) can be used on the IP pattern.
+Redis **wildcards** (*?) can be used on the IP pattern.
 
 + Example:
 
@@ -354,13 +354,13 @@ Usage: redis-ctl <PATH_TO_CONFILE> clear-stats <IP_PATTERN>
 
 **Deletes** all **stats** that match an **IP pattern**.
 
-Redis' **wildcards** (*?) can be used on the IP pattern.
+Redis **wildcards** (*?) can be used on the IP pattern.
 
 ## ***edit-conf***
 
+```
 Reconfigure a parameter of the daemon's configuration
 
-```
 Usage: redis-ctl <PATH_TO_CONFILE> edit-conf <COMMAND>
 
 Commands:
@@ -368,7 +368,7 @@ Commands:
   remove-binds        Remove binds
   add-forwarders      Add new forwarders
   remove-forwarders   Remove forwarders
-  set-blackholes      Overwrite the 2 blackhole IPs
+  set-sinks           Overwrite the 2 sinks
   add-blocked-ips     Add new blocked IPs
   remove-blocked-ips  Removed blocked IPs
   add-filters         Add filters
@@ -390,7 +390,7 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf add-binds <BIND1> [BIND2 BIND3 ...]
 
 + Example:
 
-  `[...] edit-conf add-binds UDP=127.0.0.1:53 TCP=::1:53`
+  `[...] edit-conf add-binds UDP=127.0.0.1:53 TCP=[::1]:53`
 
 ### ***remove-binds***
 
@@ -420,19 +420,19 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf remove-forwarders <FORWARDER1> [FOR
 
 **Removes forwarders** from the daemon's **configuration**.
 
-### ***set-blackholes***
+### ***set-sinks***
 
 ```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf set-blackholes <IP1> <IP2>
+Usage: redis-ctl <PATH_TO_CONFILE> edit-conf set-sinks <IP1> <IP2>
 ```
 
-**Overwrites** the **blackhole ips** of the daemon's **configuration**.
+**Overwrites** the **sink ips** of the daemon's **configuration**.
 
-There can **only** be **2** blackhole ips and there must be a **v4** **and** a **v6**. The order does not matter.
+There can **only** be **2** sink ips and there must be a **v4** **and** a **v6**. The order does not matter.
 
 + Example:
 
-  `[...] edit-conf set-blackholes 127.0.0.1 ::1`
+  `[...] edit-conf set-sinks 127.0.0.1 ::1`
 
 ### ***add-blocked-ips***
 
