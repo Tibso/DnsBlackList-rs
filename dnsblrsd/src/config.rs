@@ -159,7 +159,7 @@ pub async fn build_resolver(
     };
     let forwarders = config_forwarders(daemon_id, recvd_forwarders)?;
 
-    Some(resolver::build(daemon_id, forwarders))
+    Some(resolver::build(forwarders))
 }
 
 /// Builds the server binds

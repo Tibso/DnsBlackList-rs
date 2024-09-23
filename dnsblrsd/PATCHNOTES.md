@@ -1,3 +1,7 @@
+# 1.3.0
+
++ All record types are now handled by the resolver
+
 # 1.2.0
 
 + Refactored code

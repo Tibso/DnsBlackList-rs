@@ -15,7 +15,7 @@ use hickory_server::ServerFuture;
 use arc_swap::ArcSwap;
 use tracing::{error, info, warn};
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main()
@@ -51,6 +51,7 @@ async fn main()
         error!("{daemon_id}: An error occured when building the resolver");
         return ExitCode::from(78) // CONFIG
     };
+    info!("{daemon_id}: Resolver built");
     let resolver = Arc::new(resolver);
 
     let mut filtering_config = FilteringConfig {

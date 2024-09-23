@@ -25,27 +25,37 @@ impl From<DnsBlrsErrorKind> for DnsBlrsError {
 
 impl From<RedisError> for DnsBlrsError {
     fn from(err: RedisError) -> Self {
-        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Redis(err))}
+        Self {
+            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Redis(err))
+        }
     }
 }
 impl From<SystemTimeError> for DnsBlrsError {
     fn from(err: SystemTimeError) -> Self {
-        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::SystemTime(err))}
+        Self {
+            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::SystemTime(err))
+        }
     }
 }
 impl From<ResolveError> for DnsBlrsError {
     fn from(err: ResolveError) -> Self {
-        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))}
+        Self {
+            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))
+        }
     }
 }
 impl From<ProtoError> for DnsBlrsError {
     fn from(err: ProtoError) -> Self {
-        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))}
+        Self {
+            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))
+        }
     }
 }
 impl From<io::Error> for DnsBlrsError {
     fn from(err: io::Error) -> Self {
-        Self {kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))}
+        Self {
+            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))
+        }
     }
 }
 
@@ -55,10 +65,9 @@ pub enum DnsBlrsErrorKind {
     InvalidOpCode,
     InvalidMessageType,
     InvalidRule,
-    NotImpl,
     SocketBinding,
-    RequestRefused,
     ErroneousRData,
+
     // This custom error type wraps the external crates errors
     // to enable proper error propagation
     ExternCrateError(ExternCrateErrorKind),

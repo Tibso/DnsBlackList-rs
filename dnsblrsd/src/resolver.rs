@@ -1,23 +1,17 @@
-use crate::errors::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind, ExternCrateErrorKind};
+use crate::{errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind}, handler::TTL_1H};
 
 use std::net::SocketAddr;
-use hickory_client::{op::ResponseCode, rr::RecordType};
-use hickory_proto::{op::LowerQuery, rr::{RData, Record}};
+use hickory_client::op::ResponseCode;
+use hickory_proto::{op::Header, rr::{Record, RecordData, RecordType}};
 use hickory_resolver::{
-    IntoName, TokioAsyncResolver,
     config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
-    error::{ResolveError, ResolveErrorKind}
+    error::ResolveErrorKind, Name, TokioAsyncResolver
 };
-use tracing::info;
 
 /// Builds the resolver that will forward the requests to other DNS servers
-pub fn build(
-    daemon_id: &str,
-    forwarders: Vec<SocketAddr>
-) -> TokioAsyncResolver {
+pub fn build(forwarders: Vec<SocketAddr>)
+-> TokioAsyncResolver {
     let mut resolver_config = ResolverConfig::new();
-    // Local domain is set as resolver's domain
-    resolver_config.domain();
 
     for socket_addr in forwarders {
         let ns_udp = NameServerConfig::new(socket_addr, Protocol::Udp);
@@ -25,84 +19,77 @@ pub fn build(
         let ns_tcp = NameServerConfig::new(socket_addr, Protocol::Tcp);
         resolver_config.add_name_server(ns_tcp);
     }
-    
+
     let mut resolver_opts: ResolverOpts = ResolverOpts::default();
     // We do not want the resolver to send concurrent queries,
     // as it would increase network load for little to no speed benefit
     resolver_opts.num_concurrent_reqs = 0;
-    let resolver = TokioAsyncResolver::tokio(resolver_config, resolver_opts);
+    // Preserve intermediate records such as CNAME records
+    resolver_opts.preserve_intermediates = true;
+    // Enable EDNS for larger records
+    resolver_opts.edns0 = true;
 
-    info!("{daemon_id}: Resolver built");
-    resolver
+    TokioAsyncResolver::tokio(resolver_config, resolver_opts)
 }
 
-/// Handles the resolver errors
-fn resolve_err_kind(err: ResolveError)
--> DnsBlrsResult<()> {
-    match err.kind() {
-        ResolveErrorKind::NoRecordsFound {response_code: ResponseCode::Refused, ..}
-            => Err(DnsBlrsError::from(DnsBlrsErrorKind::RequestRefused)),
-        ResolveErrorKind::NoRecordsFound {..}
-            => Ok(()),
-        _ => Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))))
-    }
-}
+/// Uses the resolver to resolve the query
+pub async fn resolve(
+    resolver: &TokioAsyncResolver,
+    name: &Name,
+    query_type: RecordType,
+    header: &mut Header
+) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
+    let mut answer = Vec::new();
+    let mut name_servers = Vec::new();
+    let mut soas: Vec<Record> = Vec::new();
+    let mut additional = Vec::new();
 
-/// Uses the resolver to retrieve the correct records
-pub async fn get_records(
-    query: &LowerQuery,
-    resolver: &TokioAsyncResolver
-) -> DnsBlrsResult<Vec<Record>> {
-    let mut records: Vec<Record> = vec![];
+    match resolver.lookup(name.clone(), query_type).await {
+        Err(err) => match err.kind() {
+            ResolveErrorKind::NoRecordsFound { response_code: ResponseCode::Refused, .. }
+                => { header.set_response_code(ResponseCode::Refused); },
+            ResolveErrorKind::NoRecordsFound { response_code: ResponseCode::NXDomain, .. }
+                => { header.set_response_code(ResponseCode::NXDomain); },
+            ResolveErrorKind::NoRecordsFound { soa, .. }
+                => {
+                header.set_response_code(ResponseCode::NoError);
+                if soa.is_some() {
+                    let soa = soa.clone().expect("Should always be 'Some'");
+                    soas.push(
+                        Record::from_rdata(name.clone(), TTL_1H, soa.into_data().expect("Should always be 'Some'").into_rdata())
+                    );
+                }
+            },
+            _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))))
+        },
+        Ok(lookup) => {
+            let records = lookup.records();
+            for record in records {
+                let record_type = record.record_type();
 
-    let name = query.name().into_name()
-        .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?;
-
-    match query.query_type() {
-        RecordType::A => if let Ok(lookup) = resolver.ipv4_lookup(name.clone()).await
-            .map_err(resolve_err_kind) {
-                for a in lookup {
-                    records.push(Record::from_rdata(name.clone(), 3600, RData::A(a)));
-                }
-            },
-        RecordType::AAAA => if let Ok(lookup) = resolver.ipv6_lookup(name.clone()).await
-            .map_err(resolve_err_kind) {
-                for aaaa in lookup {
-                    records.push(Record::from_rdata(name.clone(), 3600, RData::AAAA(aaaa)));
-                }
-            },
-        RecordType::TXT => if let Ok(lookup) = resolver.txt_lookup(name.clone()).await
-            .map_err(resolve_err_kind) {
-                for txt in lookup {
-                    records.push(Record::from_rdata(name.clone(), 3600, RData::TXT(txt)));
-                }
-            },
-        RecordType::SRV => if let Ok(lookup) = resolver.srv_lookup(name.clone()).await
-            .map_err(resolve_err_kind) {
-                for srv in lookup {
-                    records.push(Record::from_rdata(name.clone(), 3600, RData::SRV(srv)));
-                }
-            },
-        RecordType::MX => if let Ok(lookup) = resolver.mx_lookup(name.clone()).await
-            .map_err(resolve_err_kind) {
-                for mx in lookup {
-                    records.push(Record::from_rdata(name.clone(), 3600, RData::MX(mx)));
-                }
-            },
-        RecordType::PTR => {
-            let ip = name.parse_arpa_name() 
-                .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?
-                .addr();
-
-            if let Ok(lookup) = resolver.reverse_lookup(ip).await
-            .map_err(resolve_err_kind) {
-                for ptr in lookup {
-                    records.push(Record::from_rdata(name.clone(), 3600, RData::PTR(ptr)));
+                match record_type {
+                    RecordType::SOA => {
+                        match query_type {
+                            RecordType::SOA => answer.push(record.clone()),
+                            _ => soas.push(record.clone())
+                        }
+                    },
+                    RecordType::NS => {
+                        match query_type {
+                            RecordType::NS => answer.push(record.clone()),
+                            _ => name_servers.push(record.clone())
+                        }
+                    },
+                    _ => {
+                        if (record_type == query_type) && (*record.name() == *name) {
+                            answer.push(record.clone())
+                        } else {
+                            additional.push(record.clone())
+                        }
+                    }
                 }
             }
-        },
-        _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::NotImpl))
-    };
-
-    Ok(records)
+        }
+    }
+    Ok((answer, name_servers, soas, additional))
 }

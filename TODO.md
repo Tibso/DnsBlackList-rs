@@ -1,6 +1,7 @@
 # dnslrd
 
-- implement EDE (Extended DNS Errors) and DNSSEC
+- fix filtering issues
+- implement EDNS and DNSSEC
 
 - graceful shutdown
 
