@@ -66,7 +66,6 @@ pub enum DnsBlrsErrorKind {
     InvalidMessageType,
     InvalidRule,
     SocketBinding,
-    ErroneousRData,
 
     // This custom error type wraps the external crates errors
     // to enable proper error propagation

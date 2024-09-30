@@ -1,18 +1,18 @@
 [package]
 name = "dnsblrsd"
-version = "1.3.0"
+version = "1.3.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 arc-swap = "1.7.1"
-async-trait = "0.1.82"
+async-trait = "0.1.83"
 futures-util = "0.3.30"
-hickory-client = "0.24.1"
-hickory-proto = "0.24.1"
-hickory-resolver = {version = "0.24.1", features = ["dnssec-ring"]}
-hickory-server = "0.24.1"
+hickory-client = { git = "https://github.com/Tibso/hickory-dns.git" }
+hickory-proto = { git = "https://github.com/Tibso/hickory-dns.git", features = ["dnssec", "dnssec-ring"]}
+hickory-resolver = { git = "https://github.com/Tibso/hickory-dns.git" }
+hickory-server = { git = "https://github.com/Tibso/hickory-dns.git" }
 redis = {version = "0.27.2", features = ["aio", "tokio-comp", "connection-manager"]}
 serde = {version = "1.0.209", features = ["derive"]}
 serde_json = {version = "1.0.128", features = ["std"]}

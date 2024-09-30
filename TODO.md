@@ -1,7 +1,6 @@
 # dnslrd
 
-- fix filtering issues
-- implement EDNS and DNSSEC
+- ensure every record type query have expected behavior by addind tests
 
 - graceful shutdown
 

@@ -56,7 +56,7 @@ pub fn auto (
     let client = reqwest::blocking::Client::new();
 
     println!("Downloading and encoding files...");
-    let mut dl_cnt = 0u64;
+    let mut dl_cnt = 0usize;
     
     let mut srcs: Vec<Source> = vec![];
     for src in srcs_list {
@@ -126,7 +126,7 @@ pub fn auto (
 
     println!("Querying Redis...");
 
-    let mut found_cnt = 0u64;
+    let mut found_cnt = 0usize;
     let mut cursor = 0u32;
     loop {
         let scan_keys: Vec<String>;
@@ -171,7 +171,7 @@ pub fn auto (
 
     let (year, month, day) = get_datetime::get_datetime();
 
-    let mut add_cnt = 0u64;
+    let mut add_cnt = 0usize;
     for src in &srcs {
         for filter in &src.filters {
             let hkey_prefix: String = format!("DBL;R;{};", filter.name.as_str());
@@ -212,8 +212,8 @@ pub fn add_to_filter (
 
     // If no filter is given, will assume a backup is being fed
 
-    let mut add_cnt = 0u64;
-    let mut line_cnt = 0u64;
+    let mut add_cnt = 0usize;
+    let mut line_cnt = 0usize;
     // Initializes a buffered reader and stores an iterator of its lines
     // This reader reads the file dynamically by reading big chunks of the file
     let lines = BufReader::new(file).lines();

@@ -14,7 +14,7 @@ pub fn clear (
         return Ok(ExitCode::SUCCESS)
     }
 
-    let del_count: u64 = cmd("del").arg(keys)
+    let del_count: usize = cmd("del").arg(keys)
         .query(connection)?;
     println!("{del_count} stat(s) deleted");
 

@@ -18,9 +18,9 @@ pub fn disable (
         return Ok(ExitCode::SUCCESS)
     }
 
-    let mut disabled_cnt = 0u64;
+    let mut disabled_cnt = 0usize;
     for key in keys {
-        if let Ok::<u64, _>(res) = connection.hset(key, "enabled", "0") {
+        if let Ok::<usize, _>(res) = connection.hset(key, "enabled", "0") {
             disabled_cnt += res;
         };
     }
@@ -41,9 +41,9 @@ pub fn enable (
         return Ok(ExitCode::SUCCESS)
     }
 
-    let mut enabled_cnt = 0u64;
+    let mut enabled_cnt = 0usize;
     for key in keys {
-        if let Ok::<u64, _>(res) = connection.hset(key, "enabled", "1") {
+        if let Ok::<usize, _>(res) = connection.hset(key, "enabled", "1") {
             enabled_cnt += res;
         };
     }

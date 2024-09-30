@@ -1,7 +1,6 @@
 use crate::{
     errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind},
-    filtering::{filter, FilteringConfig},
-    redis_mod, resolver
+    filtering::FilteringConfig, filtering, redis_mod, resolver
 };
 
 use std::sync::Arc;
@@ -53,10 +52,6 @@ impl RequestHandler for Handler {
                         error!("{msg_stats}A rule seems to be broken");
                         header.set_response_code(ResponseCode::ServFail);
                     },
-                    DnsBlrsErrorKind::ErroneousRData => {
-                        warn!("{msg_stats}Erroneous RData was received from a forwarder");
-                        header.set_response_code(ResponseCode::ServFail);
-                    },
                     DnsBlrsErrorKind::ExternCrateError(extern_crate_errorkind) => {
                         match extern_crate_errorkind {
                             ExternCrateErrorKind::Resolver(err) =>
@@ -102,12 +97,20 @@ impl Handler {
             return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidMessageType))
         }
 
-        let builder = MessageResponseBuilder::from_message_request(request);
-
-        // Creates a new header based on the request's header
+        let mut builder = MessageResponseBuilder::from_message_request(request);    
         let mut header = Header::response_from_request(request.header());
         header.set_authoritative(false);
         header.set_recursion_available(true);
+
+        let query = request.query();
+        let query_name = query.name().into_name()
+            .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?;
+        let query_type = query.query_type();
+        let request_src_ip = request.request_info().src.ip();
+        let wants_dnssec = request.edns().map_or(false, |edns| {
+            builder.edns(edns.clone());
+            edns.dnssec_ok()
+        });
 
         // Copies from the thread-safe handler
         let mut redis_manager = self.redis_manager.clone();
@@ -116,31 +119,24 @@ impl Handler {
         let resolver = self.resolver.clone();
         let resolver = resolver.as_ref();
         let daemon_id = self.daemon_id.as_ref();
-        let (query_name, query_type) = {
-            let query = request.query();
-            let query_name = query.name().into_name()
-                .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?;
-            (query_name, query.query_type())
-        };
-        let request_src_ip = request.request_info().src.ip();
 
-        // Write general stats about the source IP
+        // Write stats about the source IP
         redis_mod::write_stats_request(&mut redis_manager, daemon_id, request_src_ip).await?;
-
-        if request.edns().is_some_and(|edns| edns.dnssec_ok()) {
-            
-        }
 
         // Filters the domain name if the request is of RecordType A or AAAA
         let (answer, name_servers, authority, additional) = match filtering_config.is_filtering {
-            true => match query_type {
-                RecordType::A | RecordType::AAAA => {
-                    let filtering_data = filtering_config.data.as_ref().expect("'filtering_data' should never be 'None' here");
-                    filter(daemon_id, query_name, query_type, request_src_ip, filtering_data, resolver, &mut header, &mut redis_manager).await?
-                },
-                _ => resolver::resolve(resolver, &query_name, query_type, &mut header).await?
+            true => {
+                let filtering_data = filtering_config.data.as_ref().expect("'filtering_data' should never be 'None' here");
+                let sinks = filtering_data.sinks;
+                let filters = &filtering_data.filters;
+                match query_type {
+                    RecordType::A | RecordType::AAAA => {
+                        filtering::filter(daemon_id, query_name, query_type, request_src_ip, sinks, filters, wants_dnssec, resolver, &mut header, &mut redis_manager).await?
+                    },
+                    _ => filtering::filter_resolution(daemon_id, query_name, query_type, sinks, wants_dnssec, resolver, &mut header, &mut redis_manager).await?
+                }
             },
-            false => resolver::resolve(resolver, &query_name, query_type, &mut header).await?
+            false => resolver::resolve(resolver, &query_name, query_type, wants_dnssec, &mut header).await?
         };
 
         let message = builder.build(header, answer.iter(), name_servers.iter(), authority.iter(), additional.iter());

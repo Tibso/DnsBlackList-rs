@@ -1,3 +1,7 @@
+# 1.0.5
+
++ Usize usage and updated dependencies
+
 # 1.0.4
 
 + Optimizations and compatibility to new dnsblrsd

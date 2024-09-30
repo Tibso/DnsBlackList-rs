@@ -13,7 +13,7 @@ This DNS resolver **filters queries** using a **blacklist** from a Redis databas
 
 # **Goals**
 
-+ **Secure, fast and stable**
++ **Fast, secure and reliable**
 
 + **Simple to setup and operate**
 
@@ -41,14 +41,15 @@ Finally, the **response** is **sent** to the client.
 
 If **any error occurs** during the handling of a request, the worker **responds** the **approriate error** to the client.
 
-## **Supported Query Types**
+## **Filtering**
 
-| Unfiltered | Filtered |
-|-----------:|----------|
-|        TXT | A        |
-|        SRV | AAAA     |
-|         MX |          |
-|        PTR |          |
+The following **query types** are filtered:
+
++ **A**
++ **AAAA**
+
+**Other** query types are simply **forwarded** to other DNS servers.
+However, the **returned IPs** are filtered against the **IP blacklist**.
 
 ## **Signals**
 

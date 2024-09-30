@@ -76,7 +76,7 @@ pub fn add_blocked_ips (
         }
     }
 
-    let add_count: u64 = connection.sadd(format!("DBL;blocked-ips;{daemon_id}"), ips)?;
+    let add_count: usize = connection.sadd(format!("DBL;blocked-ips;{daemon_id}"), ips)?;
     println!("{add_count} IP(s) added to the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
@@ -95,7 +95,7 @@ pub fn remove_blocked_ips (
         }
     }
 
-    let del_count: u64 = connection.srem(format!("DBL;blocked-ips;{daemon_id}"), ips)?;
+    let del_count: usize = connection.srem(format!("DBL;blocked-ips;{daemon_id}"), ips)?;
     println!("{del_count} IP(s) removed from the IP blacklist");
 
     Ok(ExitCode::SUCCESS)
@@ -131,7 +131,7 @@ pub fn add_forwarders (
     daemon_id: &str,
     forwarders: Vec<String>
 ) -> RedisResult<ExitCode> {
-    let add_count: u64 = connection.sadd(format!("DBL;forwarders;{daemon_id}"), forwarders)?;
+    let add_count: usize = connection.sadd(format!("DBL;forwarders;{daemon_id}"), forwarders)?;
     println!("{add_count} forwarder(s) added to the daemon conf");
 
     Ok(ExitCode::SUCCESS)
@@ -143,7 +143,7 @@ pub fn remove_forwarders (
     daemon_id: &str,
     forwarders: Vec<String>
 ) -> RedisResult<ExitCode> {
-    let del_count: u64 = connection.srem(format!("DBL;forwarders;{daemon_id}"), forwarders)?;
+    let del_count: usize = connection.srem(format!("DBL;forwarders;{daemon_id}"), forwarders)?;
     println!("{del_count} forwarder(s) removed from the daemon conf");
 
     Ok(ExitCode::SUCCESS)
@@ -155,7 +155,7 @@ pub fn add_filters (
     daemon_id: &str,
     filters: Vec<String>
 ) -> RedisResult<ExitCode> {
-    let add_count: u64 = connection.sadd(format!("DBL;filters;{daemon_id}"), filters)?;
+    let add_count: usize = connection.sadd(format!("DBL;filters;{daemon_id}"), filters)?;
     println!("{add_count} filter(s) added to the daemon conf");
 
     Ok(ExitCode::SUCCESS)
@@ -167,8 +167,8 @@ pub fn remove_filters (
     daemon_id: &str,
     filters: Vec<String>
 ) -> RedisResult<ExitCode> {
-    let remove_count: u64 = connection.srem(format!("DBL;filters;{daemon_id}"), filters)?;
-    println!("{remove_count} filter(s) removed from the daemon conf");
+    let del_count: usize = connection.srem(format!("DBL;filters;{daemon_id}"), filters)?;
+    println!("{del_count} filter(s) removed from the daemon conf");
 
     Ok(ExitCode::SUCCESS)
 }

@@ -5,9 +5,8 @@ use crate::{
 };
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use hickory_client::rr::{RData, RecordType, Record};
 use hickory_resolver::{Name, TokioAsyncResolver};
-use hickory_proto::{op::Header, rr::rdata};
+use hickory_proto::{op::Header, rr::{rdata, RData, RecordType, Record}};
 use redis::AsyncCommands;
 use serde::Deserialize;
 //use tracing::debug;
@@ -28,16 +27,18 @@ pub struct Data {
 /// Filters out requests based on its requested domain
 pub async fn filter(
     daemon_id: &str,
-    name: Name,
+    query_name: Name,
     query_type: RecordType,
     request_src_ip: IpAddr,
-    filtering_data: &Data,
+    sinks: (Ipv4Addr, Ipv6Addr),
+    filters: &Vec<String>,
+    wants_dnssec: bool,
     resolver: &TokioAsyncResolver,
     header: &mut Header,
     redis_manager: &mut redis::aio::ConnectionManager
 ) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
     let name_string = {
-        let mut name = name.to_string();
+        let mut name = query_name.to_string();
         // Because it is a root domain name, we remove the trailing dot from the String
         name.pop();
         name
@@ -59,9 +60,7 @@ pub async fn filter(
         _ => order.extend(filter_5.into_iter().chain(6..=name_count as u8))
     }
 
-    let sinks = filtering_data.sinks;
     let (sink_v4, sink_v6) = sinks;
-    let filters = &filtering_data.filters;
 
     for index in order {
         // The domain name is reconstructed based on each iteration of order
@@ -104,33 +103,35 @@ pub async fn filter(
             // Write statistics about the source IP
             redis_mod::write_stats_match(redis_manager, daemon_id, request_src_ip, rule).await?;
 
-            return Ok((vec![Record::from_rdata(name, TTL_1H, rdata)], vec![], vec![], vec![]))
+            return Ok((vec![Record::from_rdata(query_name, TTL_1H, rdata)], vec![], vec![], vec![]))
         }
     }
 
     // If no rule was found, the resolver is used to fetch the correct answers
-    Ok(filter_resolution(daemon_id, name, query_type, &sinks, resolver, header, redis_manager).await?)
+    Ok(filter_resolution(daemon_id, query_name, query_type, sinks, wants_dnssec, resolver, header, redis_manager).await?)
 }
 
 /// Resolves the query while filtering out blacklisted IPs
 pub async fn filter_resolution(
     daemon_id: &str,
-    name: Name,
+    query_name: Name,
     query_type: RecordType,
-    sinks: &(Ipv4Addr, Ipv6Addr),
+    sinks: (Ipv4Addr, Ipv6Addr),
+    wants_dnssec: bool,
     resolver: &TokioAsyncResolver,
     header: &mut Header,
     redis_manager: &mut redis::aio::ConnectionManager
 ) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
-    let (mut answer, name_servers, soa, additional) = resolver::resolve(resolver, &name, query_type, header).await?;
+    let (mut answer, name_servers, soa, additional) = resolver::resolve(resolver, &query_name, query_type, wants_dnssec, header).await?;
     if answer.is_empty() {
         return Ok((answer, name_servers, soa, additional))
-    };
+    }
 
     // If a record is blacklisted, replace it with the sink
     for record in &answer {
-        let rdata = record.data().ok_or(DnsBlrsErrorKind::ErroneousRData)?;
-        let ip = rdata.ip_addr().ok_or(DnsBlrsErrorKind::ErroneousRData)?;
+        let Some(ip) = record.data().ip_addr() else {
+            continue
+        };
         if ! redis_manager.sismember(format!("DBL;blocked-ips;{daemon_id}").as_str(), ip.to_string().as_str()).await? {
             continue
         }
@@ -138,11 +139,11 @@ pub async fn filter_resolution(
         answer.clear();
         let (sink_v4, sink_v6) = sinks;
         let rdata: RData = match query_type {
-            RecordType::A => RData::A(rdata::a::A(*sink_v4)),
-            RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(*sink_v6)),
+            RecordType::A => RData::A(rdata::a::A(sink_v4)),
+            RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(sink_v6)),
             _ => unreachable!("Record type should have already been filtered out")
         };
-        answer.push(Record::from_rdata(name, TTL_1H, rdata));
+        answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
         return Ok((answer, name_servers, soa, additional))
     }
 
