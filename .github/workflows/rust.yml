@@ -19,7 +19,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build dnsblrsd
-      run: cargo build --manifest-path ./dnsblrsd/Cargo.toml --verbose --release
-
+      run: cargo build --manifest-path ./dnsblrsd/Cargo.toml --verbose
     - name: Build redis-ctl
-      run: cargo build --manifest-path ./redis-ctl/Cargo.toml --verbose --release
+      run: cargo build --manifest-path ./redis-ctl/Cargo.toml --verbose
