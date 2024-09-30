@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
-/// The structure "clap" will parse
+/// The structure clap will parse
 #[derive(Parser)]
 #[command(about = "This is a command-line tool used to manipulate the Redis blacklist", long_about = None)]
-pub struct Cli {
-    /// Path to "dnsblrsd.conf" is required
+pub struct Args {
+    /// Path to dnsblrsd.conf is required
     #[arg(required = true)]
     pub path_to_confile: PathBuf,
 
@@ -18,7 +18,7 @@ pub struct Cli {
 /// The commands that are available
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Display the daemon's configuration
+    /// Display the daemon's configuration and the 'redis-ctl' version
     ShowConf {},
 
     /// Reconfigure a parameter of the daemon's configuration
@@ -34,7 +34,7 @@ pub enum Commands {
         ip2: Option<String>
     },
 
-    /// Delete a rule or one of its two qtypes
+    /// Delete a rule or either of its v4 or v6 IPs
     DelRule {
         filter: String,
         domain: String,
@@ -93,8 +93,8 @@ pub enum Subcommands {
     /// Remove forwarders
     RemoveForwarders {forwarders: Vec<String>},
 
-    /// Overwrite the 2 blackhole IPs
-    SetBlackholes {blackhole_ips: Vec<String>},
+    /// Overwrite the 2 sinks
+    SetSinks {sinks: Vec<String>},
 
     /// Add new blocked IPs
     AddBlockedIps {blocked_ips: Vec<String>},

@@ -1,30 +1,50 @@
 use crate::{
-    structs::{DnsBlrsResult, DnsBlrsError, DnsBlrsErrorKind},
-    Config, resolver, redis_mod, CONFILE
+    errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult},
+    handler::TTL_1H,
+    redis_mod, resolver
 };
 
-use std::{sync::Arc, net::IpAddr};
-use hickory_client::rr::{RData, RecordType, Record};
-use hickory_server::server::Request;
-use hickory_resolver::TokioAsyncResolver;
-use hickory_proto::rr::rdata;
-use arc_swap::Guard;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use hickory_resolver::{Name, TokioAsyncResolver};
+use hickory_proto::{op::Header, rr::{rdata, RData, RecordType, Record}};
 use redis::AsyncCommands;
+use serde::Deserialize;
+//use tracing::debug;
+
+#[derive(Deserialize, Clone)]
+/// Running filtering config
+pub struct FilteringConfig {
+    pub is_filtering: bool,
+    pub data: Option<Data>
+}
+#[derive(Deserialize, Clone)]
+/// Data used for filtering
+pub struct Data {
+    pub filters: Vec<String>,
+    pub sinks: (Ipv4Addr, Ipv6Addr)
+}
 
 /// Filters out requests based on its requested domain
-pub async fn filter (
-    request: &Request,
-    config: &Guard<Arc<Config>>,
-    redis_manager: &mut redis::aio::ConnectionManager,
-    resolver: TokioAsyncResolver
-) -> DnsBlrsResult<Vec<Record>> {
-    let record_type = request.query().query_type();
+pub async fn filter(
+    daemon_id: &str,
+    query_name: Name,
+    query_type: RecordType,
+    request_src_ip: IpAddr,
+    sinks: (Ipv4Addr, Ipv6Addr),
+    filters: &Vec<String>,
+    wants_dnssec: bool,
+    resolver: &TokioAsyncResolver,
+    header: &mut Header,
+    redis_manager: &mut redis::aio::ConnectionManager
+) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
+    let name_string = {
+        let mut name = query_name.to_string();
+        // Because it is a root domain name, we remove the trailing dot from the String
+        name.pop();
+        name
+    };
 
-    let mut domain_name = request.query().name().to_string();
-    // Because it is a root domain name, we remove the trailing dot from the String
-    domain_name.pop();
-
-    let names: Vec<&str> = domain_name.split('.').collect();
+    let names: Vec<&str> = name_string.split('.').collect();
     let name_count = names.len();
     
     // The domain name is rearranged into different orders
@@ -37,40 +57,38 @@ pub async fn filter (
         3 => order.extend([3, 2, 1]),
         4 => order.extend([3, 4, 2, 1]),
         5 => order.extend(filter_5),
-        _ => order.extend(filter_5.into_iter().chain(6..=u8::try_from(name_count).map_err(|_| DnsBlrsError::from(DnsBlrsErrorKind::LogicError))?))
+        _ => order.extend(filter_5.into_iter().chain(6..=name_count as u8))
     }
 
-    // "blackholes" and "filters" are cloned
-    // out of the configuration to be used on this thread
-    let (blackhole_ipv4, blackhole_ipv6) = config.blackholes.unwrap();
-    let filters = config.filters.clone().unwrap();
+    let (sink_v4, sink_v6) = sinks;
 
     for index in order {
         // The domain name is reconstructed based on each iteration of order
         let domain = names[name_count - (index as usize)..name_count].join(".");
 
-        for filter in &filters {
+        for filter in filters {
             let rule = format!("DBL;R;{filter};{domain}");
+            let rule = rule.as_str();
 
-            // Attempts to find a rule with the provided filter and domain name
-            let rule_val: Option<String> = redis_manager.hget(rule.clone(), record_type.to_string().as_str()).await?;
+            // Attempts to find a matching rule
+            let rule_val: Option<String> = redis_manager.hget(rule, query_type.to_string().as_str()).await?;
+            let Some(rule_val) = rule_val else {
+                continue
+            };
+            // Checks if the rule is enabled
+            if ! redis_manager.hget(rule, "enabled").await? {
+                continue
+            }
 
-            if let Some(rule_val) = rule_val {
-                let enabled: u8 = redis_manager.hget(rule.clone(), "enabled").await?;
-                if enabled != 1 {
-                    continue
-                }
+            //debug!("{daemon_id}: request:{} \"{domain}\" has matched \"{filter}\" for record type: \"{record_type}\"", request.id());
 
-//                info!("{}: request:{} \"{domain}\" has matched \"{filter}\" for record type: \"{record_type}\"",
-//                    CONFILE.daemon_id, request.id()
-//                );
-
-                // If found value is "1", the blackholes are used to lie to the request
-                let rdata: RData = if rule_val == "1" {
-                    match record_type {
-                        RecordType::A => RData::A(rdata::a::A(blackhole_ipv4)),
-                        RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6)),
-                        _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::LogicError))
+            // If value is 1, the sinks are used to lie
+            let rdata: RData = {
+                if rule_val == "1" {
+                    match query_type {
+                        RecordType::A => RData::A(rdata::a::A(sink_v4)),
+                        RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(sink_v6)),
+                        _ => unreachable!("Record type should have already been filtered out")
                     }
                 } else {
                     // The rule seems to have custom IPs to respond with
@@ -79,62 +97,55 @@ pub async fn filter (
                         Ok(IpAddr::V6(ipv6)) => RData::AAAA(rdata::aaaa::AAAA(ipv6)),
                         Err(_) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
                     }
-                };
+                }
+            };
 
-                // Write statistics about the source IP
-                redis_mod::write_stats_match(redis_manager, request.request_info().src.ip(), rule).await?;
+            // Write statistics about the source IP
+            redis_mod::write_stats_match(redis_manager, daemon_id, request_src_ip, rule).await?;
 
-                return Ok(vec![Record::from_rdata(request.query().name().into(), 3600, rdata)])
-            }
+            return Ok((vec![Record::from_rdata(query_name, TTL_1H, rdata)], vec![], vec![], vec![]))
         }
     }
 
     // If no rule was found, the resolver is used to fetch the correct answers
-    let mut records = resolver::get_records(request, resolver).await?;
-    if records.is_empty() {
-        return Ok(records)
+    Ok(filter_resolution(daemon_id, query_name, query_type, sinks, wants_dnssec, resolver, header, redis_manager).await?)
+}
+
+/// Resolves the query while filtering out blacklisted IPs
+pub async fn filter_resolution(
+    daemon_id: &str,
+    query_name: Name,
+    query_type: RecordType,
+    sinks: (Ipv4Addr, Ipv6Addr),
+    wants_dnssec: bool,
+    resolver: &TokioAsyncResolver,
+    header: &mut Header,
+    redis_manager: &mut redis::aio::ConnectionManager
+) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
+    let (mut answer, name_servers, soa, additional) = resolver::resolve(resolver, &query_name, query_type, wants_dnssec, header).await?;
+    if answer.is_empty() {
+        return Ok((answer, name_servers, soa, additional))
     }
 
-    match record_type {
-        RecordType::A => {
-            // If a record is blacklisted, replace it with the blackhole
-            for record in &records {
-                if let Some(rdata) = record.data() {
-                    if let Some(ip) = rdata.ip_addr() {
-                        if redis_manager.sismember(format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
-                            records.clear();
-                            records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(rdata::a::A(blackhole_ipv4))));
-        
-                            return Ok(records)
-                        }
-                    } else {
-                        return Err(DnsBlrsError::from(DnsBlrsErrorKind::LogicError))
-                    }
-                } else {
-                    return Err(DnsBlrsError::from(DnsBlrsErrorKind::LogicError))
-                }
-            }
-        },
-        RecordType::AAAA => {
-            for record in &records {
-                if let Some(rdata) = record.data() {
-                    if let Some(ip) = rdata.ip_addr() {
-                        if redis_manager.sismember(format!("DBL;blocked-ips;{}", CONFILE.daemon_id), ip.to_string()).await? {
-                            records.clear();
-                            records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(rdata::aaaa::AAAA(blackhole_ipv6))));
+    // If a record is blacklisted, replace it with the sink
+    for record in &answer {
+        let Some(ip) = record.data().ip_addr() else {
+            continue
+        };
+        if ! redis_manager.sismember(format!("DBL;blocked-ips;{daemon_id}").as_str(), ip.to_string().as_str()).await? {
+            continue
+        }
 
-                            return Ok(records)
-                        }
-                    } else {
-                        return Err(DnsBlrsError::from(DnsBlrsErrorKind::LogicError))
-                    }
-                } else {
-                    return Err(DnsBlrsError::from(DnsBlrsErrorKind::LogicError))
-                }
-            }
-        },
-        _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::LogicError))
+        answer.clear();
+        let (sink_v4, sink_v6) = sinks;
+        let rdata: RData = match query_type {
+            RecordType::A => RData::A(rdata::a::A(sink_v4)),
+            RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(sink_v6)),
+            _ => unreachable!("Record type should have already been filtered out")
+        };
+        answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
+        return Ok((answer, name_servers, soa, additional))
     }
 
-    Ok(records)
+    Ok((answer, name_servers, soa, additional))
 }

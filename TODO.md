@@ -1,12 +1,12 @@
 # dnslrd
 
-- implement EDE (Extended DNS Errors)
+- ensure every record type query have expected behavior by addind tests
 
 - graceful shutdown
 
-# redis-ctl
+- redis_manager .req_packed_commands() or connection.pipeline()
 
-- add help text to subcommands usage
+# redis-ctl
 
 - investigate Box<[u8]> to reduce memory usage of auto_feed
 
