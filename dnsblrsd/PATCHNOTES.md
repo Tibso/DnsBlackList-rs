@@ -1,3 +1,7 @@
+# 1.3.2
+
++ Optimizations and added tests
+
 # 1.3.1
 
 + Fixed resolver response issues

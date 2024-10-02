@@ -7,6 +7,7 @@ mod filtering;
 mod errors;
 mod config;
 mod signals;
+mod tests;
 
 use crate::{handler::Handler, filtering::FilteringConfig};
 

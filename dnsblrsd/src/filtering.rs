@@ -1,7 +1,7 @@
 use crate::{
     errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult},
     handler::TTL_1H,
-    redis_mod, resolver
+    redis_mod, resolver::{self, SortedRecords}
 };
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -36,7 +36,7 @@ pub async fn filter(
     resolver: &TokioAsyncResolver,
     header: &mut Header,
     redis_manager: &mut redis::aio::ConnectionManager
-) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
+) -> DnsBlrsResult<SortedRecords> {
     let name_string = {
         let mut name = query_name.to_string();
         // Because it is a root domain name, we remove the trailing dot from the String
@@ -103,7 +103,12 @@ pub async fn filter(
             // Write statistics about the source IP
             redis_mod::write_stats_match(redis_manager, daemon_id, request_src_ip, rule).await?;
 
-            return Ok((vec![Record::from_rdata(query_name, TTL_1H, rdata)], vec![], vec![], vec![]))
+            return Ok(SortedRecords {
+                answer: vec![Record::from_rdata(query_name, TTL_1H, rdata)],
+                name_servers: Vec::new(),
+                soas: Vec::new(),
+                additional: Vec::new()
+            })
         }
     }
 
@@ -111,7 +116,7 @@ pub async fn filter(
     Ok(filter_resolution(daemon_id, query_name, query_type, sinks, wants_dnssec, resolver, header, redis_manager).await?)
 }
 
-/// Resolves the query while filtering out blacklisted IPs
+/// Resolves the query while filtering out blacklisted IPs in the answer section of the DNS response
 pub async fn filter_resolution(
     daemon_id: &str,
     query_name: Name,
@@ -121,14 +126,14 @@ pub async fn filter_resolution(
     resolver: &TokioAsyncResolver,
     header: &mut Header,
     redis_manager: &mut redis::aio::ConnectionManager
-) -> DnsBlrsResult<(Vec<Record>, Vec<Record>, Vec<Record>, Vec<Record>)> {
-    let (mut answer, name_servers, soa, additional) = resolver::resolve(resolver, &query_name, query_type, wants_dnssec, header).await?;
-    if answer.is_empty() {
-        return Ok((answer, name_servers, soa, additional))
+) -> DnsBlrsResult<SortedRecords> {
+    let mut sorted_records = resolver::resolve(resolver, &query_name, query_type, wants_dnssec, header).await?;
+    if sorted_records.answer.is_empty() {
+        return Ok(sorted_records)
     }
 
     // If a record is blacklisted, replace it with the sink
-    for record in &answer {
+    for record in &sorted_records.answer {
         let Some(ip) = record.data().ip_addr() else {
             continue
         };
@@ -136,16 +141,16 @@ pub async fn filter_resolution(
             continue
         }
 
-        answer.clear();
+        sorted_records.answer.clear();
         let (sink_v4, sink_v6) = sinks;
         let rdata: RData = match query_type {
             RecordType::A => RData::A(rdata::a::A(sink_v4)),
             RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(sink_v6)),
             _ => unreachable!("Record type should have already been filtered out")
         };
-        answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
-        return Ok((answer, name_servers, soa, additional))
+        sorted_records.answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
+        return Ok(sorted_records)
     }
 
-    Ok((answer, name_servers, soa, additional))
+    Ok(sorted_records)
 }

@@ -1,6 +1,6 @@
 use crate::{
     errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind},
-    filtering::FilteringConfig, filtering, redis_mod, resolver
+    filtering::{self, FilteringConfig}, redis_mod, resolver::{self, SortedRecords}
 };
 
 use std::sync::Arc;
@@ -124,7 +124,7 @@ impl Handler {
         redis_mod::write_stats_request(&mut redis_manager, daemon_id, request_src_ip).await?;
 
         // Filters the domain name if the request is of RecordType A or AAAA
-        let (answer, name_servers, authority, additional) = match filtering_config.is_filtering {
+        let sorted_records: SortedRecords = match filtering_config.is_filtering {
             true => {
                 let filtering_data = filtering_config.data.as_ref().expect("'filtering_data' should never be 'None' here");
                 let sinks = filtering_data.sinks;
@@ -139,7 +139,12 @@ impl Handler {
             false => resolver::resolve(resolver, &query_name, query_type, wants_dnssec, &mut header).await?
         };
 
-        let message = builder.build(header, answer.iter(), name_servers.iter(), authority.iter(), additional.iter());
+        let message = builder.build(header,
+            sorted_records.answer.iter(),
+            sorted_records.name_servers.iter(),
+            sorted_records.soas.iter(),
+            sorted_records.additional.iter()
+        );
         response.send_response(message).await
             .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))))
     }
