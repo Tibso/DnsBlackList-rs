@@ -3,21 +3,21 @@ Description=dnsblrsd
 After=network.target
 ConditionPathExists=
 
-
 [Service]
 User=dnsblrsd
 Group=dnsblrsd
 Restart=on-failure
-RestartSec=3
-StartLimitInterval=0
+RestartSec=5
+StartLimitBurst=15
+StartLimitIntervalSec=300
+# StartLimitAction=none
 Type=simple
-Restart=always
 ExecStart=
 WorkingDirectory=
-StandardOutput=journal
-StandardError=journal
 SyslogIdentifier=dnsblrsd
 AmbientCapabilities=CAP_NET_BIND_SERVICE
+# Environment="TOKIO_WORKER_THREAD=8"
+Environment="RUST_LOG=info"
 
 [Install]
 WantedBy=multi-user.target

@@ -1,12 +1,9 @@
 use crate::{
-    filtering::Data, resolver, Handler,
+    resolver, handler::Handler,
     errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult}
 };
 
-use std::{
-    fs, process::exit, str::FromStr, time::Duration,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}
-};
+use std::{fs, process::exit, time::Duration,net::SocketAddr};
 use hickory_resolver::TokioAsyncResolver;
 use hickory_server::ServerFuture;
 use redis::{aio::ConnectionManager, AsyncCommands};
@@ -20,7 +17,7 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The initial config file
 pub struct Confile {
     pub daemon_id: String,
-    pub redis_address: String
+    pub redis_addr: String
 }
 
 /// Reads the config file
@@ -40,21 +37,12 @@ pub fn read_confile(file_name: &str)
             exit(78) // CONFIG
         }
     };
-    let (daemon_id, redis_address) = (confile.daemon_id, confile.redis_address);
+    let (daemon_id, redis_addr) = (confile.daemon_id, confile.redis_addr);
 
     info!("'daemon_id' is '{daemon_id}'");
-    info!("{daemon_id}: Redis server: {redis_address}");
+    info!("{daemon_id}: Redis server: {redis_addr}");
     
-    (daemon_id, redis_address)
-}
-
-/// Checks the config sink ips
-fn check_sinks_ips(sinks: Vec<String>)
--> Option<(Ipv4Addr, Ipv6Addr)> {
-    Some(match IpAddr::from_str(sinks.first().unwrap()).ok()? {
-        IpAddr::V4(ipv4) => (ipv4, Ipv6Addr::from_str(sinks.get(1).unwrap()).ok()?),
-        IpAddr::V6(ipv6) => (Ipv4Addr::from_str(sinks.get(1).unwrap()).ok()?, ipv6)
-    })
+    (daemon_id, redis_addr)
 }
 
 /// Configures forwarders
@@ -148,9 +136,9 @@ fn parse_binds(
 /// Builds the resolver
 pub async fn build_resolver(
     daemon_id: &str,
-    redis_manager: &mut ConnectionManager
+    redis_mngr: &mut ConnectionManager
 ) -> Option<TokioAsyncResolver> {
-    let recvd_forwarders: Vec<String> = match redis_manager.smembers(format!("DBL;forwarders;{daemon_id}")).await {
+    let recvd_forwarders: Vec<String> = match redis_mngr.smembers(format!("DBL;C;forwarders;{daemon_id}")).await {
         Ok(forwarders) => forwarders,
         Err(err) => {
             error!("{daemon_id}: Error retrieving forwarders: {err:?}");
@@ -165,9 +153,9 @@ pub async fn build_resolver(
 /// Builds the server binds
 pub async fn build_binds(
     daemon_id: &str,
-    redis_manager: &mut ConnectionManager
+    redis_mngr: &mut ConnectionManager
 ) -> Option<Vec<(String, SocketAddr)>> {
-    let recvd_binds: Vec<String> = match redis_manager.smembers(format!("DBL;binds;{daemon_id}")).await {
+    let recvd_binds: Vec<String> = match redis_mngr.smembers(format!("DBL;C;binds;{daemon_id}")).await {
         Ok(binds) => binds,
         Err(err) => {
             error!("{daemon_id}: Error retrieving binds: {err:?}");
@@ -179,29 +167,12 @@ pub async fn build_binds(
     Some(binds)
 }
 
-/// Attempts to setup the config required for filtering requests
-pub async fn setup_filtering(
+/// Setup server filters
+pub async fn setup_filters(
     daemon_id: &str,
-    redis_manager: &mut ConnectionManager
-) -> Option<Data> {
-    let sinks: Vec<String> = match redis_manager.smembers(format!("DBL;sinks;{daemon_id}")).await {
-        Ok(sinks) => sinks,
-        Err(err) => {
-            warn!("{daemon_id}: Error retrieving sinks: {err:?}");
-            return None
-        }
-    };
-    // If we haven't received exactly 2 sinks, there is an issue with the configuration
-    if sinks.len() != 2 {
-        warn!("{daemon_id}: Amount of sinks received were not 2 (must have v4 and v6)");
-        return None
-    }
-    let Some((sink_ipv4, sink_ipv6)) = check_sinks_ips(sinks) else {
-        warn!("{daemon_id}: The sinks are not properly configured, there must be one IPv4 and one IPv6");
-        return None
-    };
-
-    let filters: Vec<String> = match redis_manager.smembers(format!("DBL;filters;{daemon_id}")).await {
+    redis_mngr: &mut ConnectionManager
+) -> Option<Vec<String>> {
+    let filters: Vec<String> = match redis_mngr.smembers(format!("DBL;C;filters;{daemon_id}")).await {
         Ok(filters) => filters,
         Err(err) => {
             warn!("{daemon_id}: Error retrieving filters: {err:?}");
@@ -215,18 +186,13 @@ pub async fn setup_filtering(
         return None
     }
     info!("{daemon_id}: Received {filters_cnt} filters");
-
-    let filtering_data = Data {
-        sinks: (sink_ipv4, sink_ipv6),
-        filters
-    };
     info!("{daemon_id}: Filtering data is valid");
-    Some(filtering_data)
+    Some(filters)
 }
 
 /// Setups server binds
 pub async fn setup_binds(
-    server: &mut ServerFuture<Handler>,
+    srv: &mut ServerFuture<Handler>,
     daemon_id: &str,
     binds: Vec<(String, SocketAddr)>
 ) -> DnsBlrsResult<()> {
@@ -236,14 +202,14 @@ pub async fn setup_binds(
         match proto.as_str() {
             "udp" => {
                 if let Ok(socket) = UdpSocket::bind(socket_addr).await {
-                    server.register_socket(socket);
+                    srv.register_socket(socket);
                 } else {
                     warn!("{daemon_id}: Failed to bind: '{socket_addr}' for UDP");
                 }
             },
             "tcp" => {
                 if let Ok(listener) = TcpListener::bind(socket_addr).await {
-                    server.register_listener(listener, TCP_TIMEOUT);
+                    srv.register_listener(listener, TCP_TIMEOUT);
                 } else {
                     warn!("{daemon_id}: Failed to bind: '{socket_addr}' for TCP");
                 }

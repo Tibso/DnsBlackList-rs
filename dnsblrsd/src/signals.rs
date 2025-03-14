@@ -1,4 +1,4 @@
-use crate::{config, filtering::FilteringConfig};
+use crate::{config, filtering::FilteringConf};
 
 use std::sync::Arc;
 use hickory_resolver::TokioAsyncResolver;
@@ -15,11 +15,10 @@ pub fn instantiate() -> Option<Signals> {
 pub async fn handle(
     daemon_id: String,
     mut signals: Signals,
-    filtering_config: Arc<ArcSwapAny<Arc<FilteringConfig>>>,
+    filtering_config: Arc<ArcSwapAny<Arc<FilteringConf>>>,
     resolver: Arc<TokioAsyncResolver>,
     mut redis_manager: redis::aio::ConnectionManager
 ) {
-    let daemon_id = daemon_id.as_str();
     // Awaits for a signal to be captured
     while let Some(signal) = signals.next().await {
         match signal {
@@ -27,15 +26,15 @@ pub async fn handle(
             SIGHUP => {
                 info!("{daemon_id}: Captured SIGHUP");
 
-                let Some(filtering_data) = config::setup_filtering(daemon_id, &mut redis_manager).await else {
+                let Some(filters) = config::setup_filters(&daemon_id, &mut redis_manager).await else {
                     error!("{daemon_id}: Could not fetch the filtering data");
                     continue
                 };
 
                 // Stores the new configuration back in the thread-safe variable
-                filtering_config.store(Arc::new(FilteringConfig {
+                filtering_config.store(Arc::new(FilteringConf {
                     is_filtering: true,
-                    data: Some(filtering_data)
+                    filters: Some(filters)
                 }));
 
                 info!("{daemon_id}: Filtering data was refreshed");
@@ -53,17 +52,17 @@ pub async fn handle(
                         filtering_config.store(Arc::new(tmp_filtering_config));
                     },
                     false => {
-                        if tmp_filtering_config.data.is_some() {
+                        if tmp_filtering_config.filters.is_some() {
                             tmp_filtering_config.is_filtering = true;
                             info!("{daemon_id}: Server started filtering");
                             filtering_config.store(Arc::new(tmp_filtering_config));
                         } else {
-                            let Some(filtering_data) = config::setup_filtering(daemon_id, &mut redis_manager).await else {
+                            let Some(filters) = config::setup_filters(&daemon_id, &mut redis_manager).await else {
                                 error!("{daemon_id}: Could not fetch the filtering data");
                                 error!("{daemon_id}: Server is not filtering");
                                 continue
                             };
-                            tmp_filtering_config.data = Some(filtering_data);
+                            tmp_filtering_config.filters = Some(filters);
                             tmp_filtering_config.is_filtering = true;
                             info!("{daemon_id}: Server started filtering");
                             filtering_config.store(Arc::new(tmp_filtering_config));

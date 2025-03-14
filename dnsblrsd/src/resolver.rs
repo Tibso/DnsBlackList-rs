@@ -1,4 +1,4 @@
-use crate::{errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind}, handler::TTL_1H};
+use crate::{errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind}, handler::{Handler, TTL_1H}};
 
 use std::net::SocketAddr;
 use hickory_proto::{
@@ -8,6 +8,7 @@ use hickory_resolver::{
     config::{NameServerConfig, ResolverConfig, ResolverOpts},
     Name, TokioAsyncResolver
 };
+use hickory_server::{authority::MessageResponseBuilder, server::Request};
 
 /// Builds the resolver that will forward the requests to other DNS servers
 pub fn build(forwarders: Vec<SocketAddr>)
@@ -33,13 +34,13 @@ pub fn build(forwarders: Vec<SocketAddr>)
     TokioAsyncResolver::tokio(resolver_config, resolver_opts)
 }
 
-pub struct SortedRecords {
+pub struct Records {
     pub answer: Vec<Record>,
     pub name_servers: Vec<Record>,
     pub soas: Vec<Record>,
     pub additional: Vec<Record>
 }
-impl SortedRecords {
+impl Records {
     pub fn new() -> Self {
         Self {
             answer: Vec::new(),
@@ -52,31 +53,42 @@ impl SortedRecords {
 
 /// Resolves the query
 pub async fn resolve(
-    resolver: &TokioAsyncResolver,
-    query_name: &Name,
-    query_type: RecordType,
-    wants_dnssec: bool,
-    header: &mut Header
-) -> DnsBlrsResult<SortedRecords> {
-    let mut sorted_records = SortedRecords::new();
-    match resolver.lookup(query_name.clone(), query_type, wants_dnssec).await {
+    handler: &Handler,
+    request: &Request,
+    builder_header: (&mut MessageResponseBuilder<'_>, &mut Header)
+) -> DnsBlrsResult<Records> {
+    let resolver = handler.resolver.clone();
+    let (query_name, qtype) = {
+        let query = request.query();
+        (query.name(), query.query_type())
+    };
+    let (builder, header) = builder_header;
+    let wants_dnssec = request.edns().is_some_and(|edns| {
+        builder.edns(edns.clone());
+        edns.dnssec_ok()
+    });
+
+    let mut sorted_records = Records::new();
+    match resolver.lookup(query_name, qtype, wants_dnssec).await {
         Err(err) => match err.proto() {
             Some(proto_err) => match proto_err.kind() {
                 ProtoErrorKind::NoRecordsFound { response_code: ResponseCode::Refused, .. }
                     => { header.set_response_code(ResponseCode::Refused); },
-                ProtoErrorKind::NoRecordsFound { response_code: ResponseCode::NXDomain, .. }
-                    => { header.set_response_code(ResponseCode::NXDomain); },
                 ProtoErrorKind::NoRecordsFound { response_code: ResponseCode::NotImp, .. }
                     => { header.set_response_code(ResponseCode::NotImp); },
-                ProtoErrorKind::NoRecordsFound { soa, ns, .. }
+                ProtoErrorKind::NoRecordsFound { response_code, soa, ns, .. }
                     => {
-                        header.set_response_code(ResponseCode::NoError);
+                        match response_code {
+                            ResponseCode::NXDomain => { header.set_response_code(ResponseCode::NXDomain); },
+                            ResponseCode::NoError => { header.set_response_code(ResponseCode::NoError); },
+                            _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(proto_err.clone()))))
+                        }
                         if let Some(soa) = soa {
-                            sorted_records.soas.push(Record::from_rdata(query_name.clone(), TTL_1H, soa.clone().into_data().into_rdata()));
+                            sorted_records.soas.push(Record::from_rdata(query_name.into(), TTL_1H, soa.clone().into_data().into_rdata()));
                         }
                         if let Some(ns_datas) = ns {
                             for ns_data in ns_datas.as_ref() {
-                                sorted_records.name_servers.push(Record::from_rdata(query_name.clone(), TTL_1H, ns_data.ns.clone().into_data().into_rdata()));
+                                sorted_records.name_servers.push(Record::from_rdata(query_name.into(), TTL_1H, ns_data.ns.clone().into_data().into_rdata()));
                                 sorted_records.additional.extend_from_slice(&ns_data.glue);
                             }
                         }
@@ -87,14 +99,19 @@ pub async fn resolve(
         },
         Ok(lookup) => {
             header.set_response_code(ResponseCode::NoError);
-            sort_records(lookup.records(), query_name, query_type, &mut sorted_records);
+            sort_records(lookup.records(), query_name, qtype, &mut sorted_records);
         }
     }
     Ok(sorted_records)
 }
 
 /// Sorts the records in their respective section
-pub fn sort_records(records: &[Record], query_name: &Name, query_type: RecordType, sorted_records: &mut SortedRecords) {
+pub fn sort_records (
+    records: &[Record],
+    query_name: &Name,
+    qtype: RecordType,
+    sorted_records: &mut Records
+) {
     let answer = &mut sorted_records.answer;
     let name_servers = &mut sorted_records.name_servers;
     let soas = &mut sorted_records.soas;
@@ -105,13 +122,13 @@ pub fn sort_records(records: &[Record], query_name: &Name, query_type: RecordTyp
         let record_type = record.record_type();
         match record_type {
             RecordType::SOA => {
-                match query_type {
+                match qtype {
                     RecordType::SOA => answer.push(record.clone()),
                     _ => soas.push(record.clone())
                 }
             },
             RecordType::NS => {
-                match query_type {
+                match qtype {
                     RecordType::NS => answer.push(record.clone()),
                     _ => name_servers.push(record.clone())
                 }
@@ -122,7 +139,7 @@ pub fn sort_records(records: &[Record], query_name: &Name, query_type: RecordTyp
                     .into_rrsig().expect("DNSSECRData has to be RRSIG")
                     .type_covered();
 
-                if data_type_covered == query_type && *record.name() == *query_name {
+                if data_type_covered == qtype && *record.name() == *query_name {
                     answer.push(record.clone());
                     continue
                 }
@@ -143,8 +160,7 @@ pub fn sort_records(records: &[Record], query_name: &Name, query_type: RecordTyp
                 answer.push(record.clone())
             },
             _ => {
-                if (record_type == query_type && *record.name() == *query_name)
-                    || (record_type == query_type && *record.name() == cname) {
+                if (*record.name() == *query_name || *record.name() == cname) && record_type == qtype {
                         answer.push(record.clone())
                 } else {
                     additional.push(record.clone())

@@ -9,8 +9,6 @@ mod config;
 mod signals;
 mod tests;
 
-use crate::{handler::Handler, filtering::FilteringConfig};
-
 use std::{process::ExitCode, sync::Arc};
 use hickory_server::ServerFuture;
 use arc_swap::ArcSwap;
@@ -28,8 +26,7 @@ async fn main()
         .without_time();
     tracing_subscriber::fmt().event_format(tracing_format).init();
 
-    let (daemon_id, redis_address) = config::read_confile("dnsblrsd.conf");
-    let daemon_id = daemon_id.as_str();
+    let (daemon_id, redis_addr) = config::read_confile("dnsblrsd.conf");
 
     info!("{daemon_id}: Server version: {VERSION}");
     info!("{daemon_id}: Initializing server...");
@@ -40,29 +37,29 @@ async fn main()
     };
     let signals_handler = signals.handle();
 
-    let mut redis_manager = match redis_mod::build_manager(daemon_id, redis_address.as_str()).await {
-        Ok(manager) => manager,
+    let mut redis_mngr = match redis_mod::build_manager(&daemon_id, &redis_addr).await {
+        Ok(mngr) => mngr,
         Err(err) => {
             error!("{daemon_id}: An error occured when building the Redis connection manager: {err:?}");
             return ExitCode::from(69) // UNAVAILABLE
         }
     };
 
-    let Some(resolver) = config::build_resolver(daemon_id, &mut redis_manager).await else {
+    let Some(resolver) = config::build_resolver(&daemon_id, &mut redis_mngr).await else {
         error!("{daemon_id}: An error occured when building the resolver");
         return ExitCode::from(78) // CONFIG
     };
     info!("{daemon_id}: Resolver built");
     let resolver = Arc::new(resolver);
 
-    let mut filtering_config = FilteringConfig {
+    let mut filtering_conf = filtering::FilteringConf {
         is_filtering: false,
-        data: None  
+        filters: None  
     };
-    match config::setup_filtering(daemon_id, &mut redis_manager).await {
-        Some(filtering_data) => {
-            filtering_config.data = Some(filtering_data);
-            filtering_config.is_filtering = true;
+    match config::setup_filters(&daemon_id, &mut redis_mngr).await {
+        Some(filters) => {
+            filtering_conf.filters = Some(filters);
+            filtering_conf.is_filtering = true;
             info!("{daemon_id}: The server will filter requests");
         },
         None => {
@@ -73,33 +70,33 @@ async fn main()
 
     // Builds a thread-safe variable that stores the server's configuration
     // This variable is optimized for read-mostly scenarios
-    let filtering_config = Arc::new(ArcSwap::from_pointee(filtering_config));
+    let filtering_conf = Arc::new(ArcSwap::from_pointee(filtering_conf));
 
     // This variable is thread-safe and given to each thread
-    let handler = Handler {
-        daemon_id: daemon_id.to_string(),
-        redis_manager: redis_manager.clone(),
-        filtering_config: filtering_config.clone(),
+    let handler = handler::Handler {
+        daemon_id: daemon_id.clone(),
+        redis_mngr: redis_mngr.clone(),
+        filtering_conf: filtering_conf.clone(),
         resolver: resolver.clone()
     };
     
     // Spawns signals task
-    let signals_task = tokio::task::spawn(signals::handle(daemon_id.to_string(), signals, filtering_config, resolver, redis_manager.clone()));
+    let signals_task = tokio::task::spawn(signals::handle(daemon_id.clone(), signals, filtering_conf, resolver, redis_mngr.clone()));
 
-    let mut server = ServerFuture::new(handler);
+    let mut srv = ServerFuture::new(handler);
 
-    let Some(binds) = config::build_binds(daemon_id, &mut redis_manager).await else {
+    let Some(binds) = config::build_binds(&daemon_id, &mut redis_mngr).await else {
         error!("{daemon_id}: An error occured when building server binds");
         return ExitCode::from(78) // CONFIG
     };
 
-    if let Err(err) = config::setup_binds(&mut server, daemon_id, binds).await {
+    if let Err(err) = config::setup_binds(&mut srv, &daemon_id, binds).await {
         error!("{daemon_id}: An error occured when setting up binds: {err:?}");
         return ExitCode::from(71) // OSERR
     };
 
     info!("{daemon_id}: Server started");
-    if let Err(err) = server.block_until_done().await {
+    if let Err(err) = srv.block_until_done().await {
         error!("{daemon_id}: An error occured while driving server future to completion: {err:?}");
         return ExitCode::from(70) // SOFTWARE
     };

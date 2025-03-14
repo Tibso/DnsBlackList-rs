@@ -1,156 +1,124 @@
 use crate::{
+    handler::Handler,
     errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult},
-    handler::TTL_1H,
-    redis_mod, resolver::{self, SortedRecords}
+    resolver::Records
 };
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use hickory_resolver::{Name, TokioAsyncResolver};
-use hickory_proto::{op::Header, rr::{rdata, RData, RecordType, Record}};
-use redis::AsyncCommands;
+use hickory_server::server::Request;
+use redis::pipe;
 use serde::Deserialize;
-//use tracing::debug;
+use tracing::info;
 
 #[derive(Deserialize, Clone)]
-/// Running filtering config
-pub struct FilteringConfig {
+/// Conf used for filtering
+pub struct FilteringConf {
     pub is_filtering: bool,
-    pub data: Option<Data>
-}
-#[derive(Deserialize, Clone)]
-/// Data used for filtering
-pub struct Data {
-    pub filters: Vec<String>,
-    pub sinks: (Ipv4Addr, Ipv6Addr)
+    pub filters: Option<Vec<String>>
 }
 
 /// Filters out requests based on its requested domain
-pub async fn filter(
-    daemon_id: &str,
-    query_name: Name,
-    query_type: RecordType,
-    request_src_ip: IpAddr,
-    sinks: (Ipv4Addr, Ipv6Addr),
-    filters: &Vec<String>,
-    wants_dnssec: bool,
-    resolver: &TokioAsyncResolver,
-    header: &mut Header,
-    redis_manager: &mut redis::aio::ConnectionManager
-) -> DnsBlrsResult<SortedRecords> {
-    let name_string = {
-        let mut name = query_name.to_string();
-        // Because it is a root domain name, we remove the trailing dot from the String
-        name.pop();
-        name
+pub async fn filter_domain (
+    handler: &Handler,
+    request: &Request
+) -> DnsBlrsResult<Option<Records>> {
+    let Some(filters) = handler.filtering_conf.load().filters.clone() else {
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::IncompleteConf))
     };
+    let query = request.query();
+    let mut redis_mngr = handler.redis_mngr.clone();
+    let request_info = request.request_info();
 
-    let names: Vec<&str> = name_string.split('.').collect();
-    let name_count = names.len();
+    let mut request_domain = query.name().to_string();
+    // Because it is a root domain name, we remove the trailing dot
+    request_domain.pop();
+    let parts: Vec<&str> = request_domain.split('.').collect();
+    let parts_len = parts.len();
     
-    // The domain name is rearranged into different orders
-    // which were found to match known domain names faster
-    let filter_5: [u8; 5] = [3, 4, 2, 5, 1];
-    let mut order: Vec<u8> = vec![];
-    match name_count {
-        1 => order.push(1),
-        2 => order.extend([2, 1]),
-        3 => order.extend([3, 2, 1]),
-        4 => order.extend([3, 4, 2, 1]),
-        5 => order.extend(filter_5),
-        _ => order.extend(filter_5.into_iter().chain(6..=name_count as u8))
+    let mut pipe = pipe();
+    let mut search_domain_parts = Vec::with_capacity(parts_len);
+    for filter in filters {
+        for i in (0..parts_len).rev() {
+            search_domain_parts.insert(0, parts[i]);
+            let rule = format!("DBL;RD;{filter};{}", search_domain_parts.join("."));
+            pipe.hget(rule, "enabled");
+        }
+        search_domain_parts.clear();
     }
-
-    let (sink_v4, sink_v6) = sinks;
-
-    for index in order {
-        // The domain name is reconstructed based on each iteration of order
-        let domain = names[name_count - (index as usize)..name_count].join(".");
-
-        for filter in filters {
-            let rule = format!("DBL;R;{filter};{domain}");
-            let rule = rule.as_str();
-
-            // Attempts to find a matching rule
-            let rule_val: Option<String> = redis_manager.hget(rule, query_type.to_string().as_str()).await?;
-            let Some(rule_val) = rule_val else {
-                continue
-            };
-            // Checks if the rule is enabled
-            if ! redis_manager.hget(rule, "enabled").await? {
-                continue
-            }
-
-            //debug!("{daemon_id}: request:{} \"{domain}\" has matched \"{filter}\" for record type: \"{record_type}\"", request.id());
-
-            // If value is 1, the sinks are used to lie
-            let rdata: RData = {
-                if rule_val == "1" {
-                    match query_type {
-                        RecordType::A => RData::A(rdata::a::A(sink_v4)),
-                        RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(sink_v6)),
-                        _ => unreachable!("Record type should have already been filtered out")
-                    }
-                } else {
-                    // The rule seems to have custom IPs to respond with
-                    match rule_val.parse::<IpAddr>() {
-                        Ok(IpAddr::V4(ipv4)) => RData::A(rdata::a::A(ipv4)),
-                        Ok(IpAddr::V6(ipv6)) => RData::AAAA(rdata::aaaa::AAAA(ipv6)),
-                        Err(_) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
-                    }
-                }
-            };
-
-            // Write statistics about the source IP
-            redis_mod::write_stats_match(redis_manager, daemon_id, request_src_ip, rule).await?;
-
-            return Ok(SortedRecords {
-                answer: vec![Record::from_rdata(query_name, TTL_1H, rdata)],
-                name_servers: Vec::new(),
-                soas: Vec::new(),
-                additional: Vec::new()
-            })
+    let results: Vec<Option<u8>> = pipe.query_async(&mut redis_mngr).await?;
+    for result in results.into_iter().flatten() {
+        info!("{}: request:{} src:{}://{} QUERY:{} | Blacklisted \"{request_domain}\" found",
+            handler.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query);
+        match result {
+            1 => return Ok(Some(Records::new())),
+            0 => continue,
+            _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
         }
     }
+    Ok(None)
+    
+    // #[cfg(feature = "qtypes")]
+    // let rule_val: Option<String> = redis_mngr.hget(rule, query.query_type().to_string()).await?;
+    // let Some(rule_val) = rule_val else {
+    //     continue
+    // };
 
-    // If no rule was found, the resolver is used to fetch the correct answers
-    Ok(filter_resolution(daemon_id, query_name, query_type, sinks, wants_dnssec, resolver, header, redis_manager).await?)
+    // info!("{}: request:{} \"{domain}\" has matched \"{filter}\" for qtype: \"{}\"",
+    //     handler.daemon_id, request.id(), query.query_type());
+    
+    // #[cfg(feature = "stats")]
+    // // Write statistics about the source IP
+    // redis_mod::write_stats_match(redis_manager, daemon_id, request_src_ip, rule).await?;
+
+    // #[cfg(feature = "custom_ips")]
+    // // If value is 1 respond NXDomain, otherwise respond custom IP
+    // if rule_val == "1" {
+    //     header.set_response_code(ResponseCode::NXDomain);
+    //     return Ok(ResponseRecords::new())
+    // } else {
+    //     let rdata = match rule_val.parse::<IpAddr>() {
+    //         Ok(IpAddr::V4(ipv4)) => RData::A(rdata::a::A(ipv4)),
+    //         Ok(IpAddr::V6(ipv6)) => RData::AAAA(rdata::aaaa::AAAA(ipv6)),
+    //         Err(_) => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
+    //     };
+    //     let mut response_records = ResponseRecords::new();
+    //     response_records.answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
+    //     return Ok(response_records)
+    // }
 }
 
-/// Resolves the query while filtering out blacklisted IPs in the answer section of the DNS response
-pub async fn filter_resolution(
-    daemon_id: &str,
-    query_name: Name,
-    query_type: RecordType,
-    sinks: (Ipv4Addr, Ipv6Addr),
-    wants_dnssec: bool,
-    resolver: &TokioAsyncResolver,
-    header: &mut Header,
-    redis_manager: &mut redis::aio::ConnectionManager
-) -> DnsBlrsResult<SortedRecords> {
-    let mut sorted_records = resolver::resolve(resolver, &query_name, query_type, wants_dnssec, header).await?;
-    if sorted_records.answer.is_empty() {
-        return Ok(sorted_records)
-    }
+/// Checks if there is a blacklisted IP in the answer section of the DNS response
+pub async fn have_blacklisted_ip (
+    handler: &Handler,
+    request: &Request,
+    records: &Records
+) -> DnsBlrsResult<bool> {
+    let Some(filters) = handler.filtering_conf.load().filters.clone() else {
+        return Err(DnsBlrsError::from(DnsBlrsErrorKind::IncompleteConf))
+    };
+    let mut redis_mngr = handler.redis_mngr.clone();
+    let request_info = request.request_info();
 
-    // If a record is blacklisted, replace it with the sink
-    for record in &sorted_records.answer {
+    let mut pipe = pipe();
+    for record in &records.answer {
         let Some(ip) = record.data().ip_addr() else {
             continue
         };
-        if ! redis_manager.sismember(format!("DBL;blocked-ips;{daemon_id}").as_str(), ip.to_string().as_str()).await? {
-            continue
+        let ip_string = ip.to_string();
+
+        for filter in &filters {
+            let rule = format!("DBL;RI;{filter};{ip_string}");
+            pipe.hget(rule, "enabled");
         }
-
-        sorted_records.answer.clear();
-        let (sink_v4, sink_v6) = sinks;
-        let rdata: RData = match query_type {
-            RecordType::A => RData::A(rdata::a::A(sink_v4)),
-            RecordType::AAAA => RData::AAAA(rdata::aaaa::AAAA(sink_v6)),
-            _ => unreachable!("Record type should have already been filtered out")
-        };
-        sorted_records.answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
-        return Ok(sorted_records)
     }
-
-    Ok(sorted_records)
+    let results: Vec<Option<u8>> = pipe.query_async(&mut redis_mngr).await?;
+    for result in results.into_iter().flatten() {
+        info!("{}: request:{} src:{}://{} QUERY:{} | A blacklisted IP was found when resolving \"{}\"",
+            handler.daemon_id, request.id(), request_info.protocol, request_info.src, request_info.query, request.query().name());
+        match result {
+            1 => return Ok(true),
+            0 => continue,
+            _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::InvalidRule))
+        }
+    }
+    Ok(false)
 }

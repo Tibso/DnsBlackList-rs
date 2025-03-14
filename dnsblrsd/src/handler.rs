@@ -1,10 +1,10 @@
 use crate::{
     errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind},
-    filtering::{self, FilteringConfig}, redis_mod, resolver::{self, SortedRecords}
+    filtering::{self, FilteringConf}, resolver::{self, Records}
 };
 
 use std::sync::Arc;
-use hickory_resolver::{IntoName, TokioAsyncResolver};
+use hickory_resolver::TokioAsyncResolver;
 use hickory_server::{
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     proto::op::{Header, ResponseCode, OpCode, MessageType},
@@ -52,6 +52,10 @@ impl RequestHandler for Handler {
                         error!("{msg_stats}A rule seems to be broken");
                         header.set_response_code(ResponseCode::ServFail);
                     },
+                    DnsBlrsErrorKind::IncompleteConf => {
+                        error!("{msg_stats}The daemon conf is incomplete");
+                        header.set_response_code(ResponseCode::ServFail);
+                    },
                     DnsBlrsErrorKind::ExternCrateError(extern_crate_errorkind) => {
                         match extern_crate_errorkind {
                             ExternCrateErrorKind::Resolver(err) =>
@@ -70,8 +74,8 @@ impl RequestHandler for Handler {
                     _ => unreachable!("Unfinished implementation of new error kind")
                 }
 
-                let message = builder.build(header, &[], &[], &[], &[]);
-                response.send_response(message).await.expect("Could not send the error response")
+                let msg = builder.build(header, [], [], [], []);
+                response.send_response(msg).await.expect("Could not send the error response")
             }
         }
     }
@@ -79,12 +83,12 @@ impl RequestHandler for Handler {
 
 pub struct Handler {
     pub daemon_id: String,
-    pub redis_manager: ConnectionManager,
-    pub filtering_config: Arc<ArcSwapAny<Arc<FilteringConfig>>>,
+    pub redis_mngr: ConnectionManager,
+    pub filtering_conf: Arc<ArcSwapAny<Arc<FilteringConf>>>,
     pub resolver: Arc<TokioAsyncResolver>
 }
 impl Handler {
-    /// Will try to handle a request on a designated thread
+    /// Try to handle a request on a designated thread
     async fn try_handle_request <R: ResponseHandler> (
         &self,
         request: &Request,
@@ -101,51 +105,53 @@ impl Handler {
         let mut header = Header::response_from_request(request.header());
         header.set_authoritative(false);
         header.set_recursion_available(true);
+        let builder_header = (&mut builder, &mut header);
 
-        let query = request.query();
-        let query_name = query.name().into_name()
-            .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))))?;
-        let query_type = query.query_type();
-        let request_src_ip = request.request_info().src.ip();
-        let wants_dnssec = request.edns().map_or(false, |edns| {
-            builder.edns(edns.clone());
-            edns.dnssec_ok()
-        });
+        // #[feature(stats)]
+        // // Write stats about the source IP
+        // redis_mod::write_stats_request(&mut redis_manager, daemon_id, request_src_ip).await?;
 
-        // Copies from the thread-safe handler
-        let mut redis_manager = self.redis_manager.clone();
-        let filtering_config = self.filtering_config.clone().load();
-        let filtering_config = filtering_config.as_ref();
-        let resolver = self.resolver.clone();
-        let resolver = resolver.as_ref();
-        let daemon_id = self.daemon_id.as_ref();
-
-        // Write stats about the source IP
-        redis_mod::write_stats_request(&mut redis_manager, daemon_id, request_src_ip).await?;
-
+        let filtering_conf = self.filtering_conf.clone().load();
         // Filters the domain name if the request is of RecordType A or AAAA
-        let sorted_records: SortedRecords = match filtering_config.is_filtering {
-            true => {
-                let filtering_data = filtering_config.data.as_ref().expect("'filtering_data' should never be 'None' here");
-                let sinks = filtering_data.sinks;
-                let filters = &filtering_data.filters;
-                match query_type {
+        let response_records: Records = {
+            if filtering_conf.is_filtering {
+                match request.query().query_type() {
                     RecordType::A | RecordType::AAAA => {
-                        filtering::filter(daemon_id, query_name, query_type, request_src_ip, sinks, filters, wants_dnssec, resolver, &mut header, &mut redis_manager).await?
+                        if let Some(records) = filtering::filter_domain(self, request).await? {
+                            if records.answer.is_empty() {
+                                header.set_response_code(ResponseCode::NXDomain);
+                            }
+                            records
+                        } else {
+                            let mut records = resolver::resolve(self, request, builder_header).await?;
+                            if filtering::have_blacklisted_ip(self, request, &records).await? {
+                                header.set_response_code(ResponseCode::NXDomain);
+                                records.answer.clear();
+                            }
+                            records
+                        }
                     },
-                    _ => filtering::filter_resolution(daemon_id, query_name, query_type, sinks, wants_dnssec, resolver, &mut header, &mut redis_manager).await?
+                    _ => {
+                        let mut records = resolver::resolve(self, request, builder_header).await?;
+                        if filtering::have_blacklisted_ip(self, request, &records).await? {
+                            header.set_response_code(ResponseCode::NXDomain);
+                            records.answer.clear();
+                        }
+                        records
+                    }
                 }
-            },
-            false => resolver::resolve(resolver, &query_name, query_type, wants_dnssec, &mut header).await?
+            } else {
+                resolver::resolve(self, request, builder_header).await?
+            }
         };
 
-        let message = builder.build(header,
-            sorted_records.answer.iter(),
-            sorted_records.name_servers.iter(),
-            sorted_records.soas.iter(),
-            sorted_records.additional.iter()
+        let msg = builder.build(header,
+            response_records.answer.iter(),
+            response_records.name_servers.iter(),
+            response_records.soas.iter(),
+            response_records.additional.iter()
         );
-        response.send_response(message).await
+        response.send_response(msg).await
             .map_err(|err| DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))))
     }
 }

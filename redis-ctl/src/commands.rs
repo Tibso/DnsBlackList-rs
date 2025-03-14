@@ -25,23 +25,24 @@ pub enum Commands {
     #[command(subcommand)]
     EditConf (Subcommands),
 
-    /// Add a new rule
-    AddRule {
-        filter: String,
+    /// Add a new domain rule
+    AddDomain {
         source: String,
+        filter: String,
         domain: String,
+        ttl: String,
         ip1: Option<String>,
         ip2: Option<String>
     },
 
-    /// Delete a rule or either of its v4 or v6 IPs
-    DelRule {
+    /// Delete a domain rule or either of its v4 or v6 IPs
+    RemoveDomain {
         filter: String,
         domain: String,
-        ip: Option<String>
+        ip_ver: Option<u8>
     },
 
-    /// Search for rules using a pattern
+    /// Search rules using a pattern
     SearchRules {
         filter: String,
         domain: String
@@ -59,14 +60,26 @@ pub enum Commands {
         pattern: String
     },
 
-    /// Update rules automatically using the "dnsblrs_sources.json" file
-    AutoFeed {path_to_sources: PathBuf},
-    
-    /// Feed a list of domains to a matchclass
-    Feed {
-        path_to_list: PathBuf,
+    /// Add new IP rules
+    AddIps {
+        source: String,
         filter: String,
-        source: String
+        ttl: String,
+        ips: Vec<String>
+    },
+
+    /// Remove IP rules
+    RemoveIps {
+        filter: String,
+        ips: Vec<String>
+    },
+
+    /// Feed rules to a filter
+    FeedFilter {
+        path_to_list: PathBuf,
+        source: String,
+        filter: String,
+        ttl: String
     },
 
     /// Display stats about IP addresses that match a pattern
@@ -74,8 +87,6 @@ pub enum Commands {
 
     /// Clear stats about IP addresses that match a pattern
     ClearStats {pattern: String},
-
-    //BackupFull {path_to_backup: String}
 }
 
 /// The subcommands that modify the dnsblrsd configuration
@@ -92,15 +103,6 @@ pub enum Subcommands {
 
     /// Remove forwarders
     RemoveForwarders {forwarders: Vec<String>},
-
-    /// Overwrite the 2 sinks
-    SetSinks {sinks: Vec<String>},
-
-    /// Add new blocked IPs
-    AddBlockedIps {blocked_ips: Vec<String>},
-
-    ///Removed blocked IPs
-    RemoveBlockedIps {blocked_ips: Vec<String>},
 
     /// Add filters
     AddFilters {filters: Vec<String>},

@@ -1,7 +1,9 @@
+#![forbid(unsafe_code)]
+
 mod commands;
 mod modules;
 
-use crate::{commands::{Args, Commands, Subcommands}, modules::{conf, feed, stats, rules}};
+use crate::{commands::{Args, Commands, Subcommands}, modules::{conf, stats, rules}};
 
 use redis::Client;
 use std::{fs, process::ExitCode};
@@ -12,10 +14,10 @@ use serde::{Serialize, Deserialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Confile {
     daemon_id: String,
-    redis_address: String
+    redis_addr: String
 }
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() -> ExitCode {
     // Arguments are parsed and stored
@@ -23,7 +25,7 @@ fn main() -> ExitCode {
     let path_to_confile = &args.path_to_confile;
 
     // First argument should be the 'path_to_confile'
-    let (daemon_id, redis_address) = {
+    let (daemon_id, redis_addr) = {
         let tmp_string = match fs::read_to_string(path_to_confile) {
             Ok(string) => string,
             Err(err) => {
@@ -38,12 +40,12 @@ fn main() -> ExitCode {
                 return ExitCode::from(78) // CONFIG
             }
         };
-        (confile.daemon_id, confile.redis_address)
+        (confile.daemon_id, confile.redis_addr)
     };
-    let (daemon_id, redis_address) = (daemon_id.as_str(), redis_address.as_str());
+    let (daemon_id, redis_addr) = (daemon_id.as_str(), redis_addr.as_str());
 
     // A client is built and probes the Redis server to check its availability
-    let client = match Client::open(format!("redis://{redis_address}/")) {
+    let client = match Client::open(format!("redis://{redis_addr}/")) {
         Ok(client) => client,
         Err(err) => {
             println!("Error probing the Redis server: {err}");
@@ -62,7 +64,7 @@ fn main() -> ExitCode {
     // Each element of the Commands enum calls its own function
     let result = match args.command {
         Commands::ShowConf { }
-            => conf::show(&mut connection, daemon_id, redis_address),
+            => conf::show(&mut connection, daemon_id, redis_addr),
 
         Commands::EditConf (subcommand)
             => match subcommand {
@@ -78,15 +80,6 @@ fn main() -> ExitCode {
                 Subcommands::RemoveForwarders { forwarders }
                     => conf::remove_forwarders(&mut connection, daemon_id, forwarders),
 
-                Subcommands::SetSinks { sinks }
-                    => conf::set_sinks(&mut connection, daemon_id, sinks),
-
-                Subcommands::AddBlockedIps { blocked_ips }
-                    => conf::add_blocked_ips(&mut connection, daemon_id, blocked_ips),
-
-                Subcommands::RemoveBlockedIps { blocked_ips }
-                    => conf::remove_blocked_ips(&mut connection, daemon_id, blocked_ips),
-
                 Subcommands::AddFilters { filters }
                     => conf::add_filters(&mut connection, daemon_id, filters),
 
@@ -95,31 +88,34 @@ fn main() -> ExitCode {
             },
 
         Commands::ClearStats { pattern }
-            => stats::clear(&mut connection, daemon_id, pattern.as_str()),
+            => stats::clear(&mut connection, daemon_id, &pattern),
 
         Commands::ShowStats { pattern }
-            => stats::show(&mut connection, daemon_id, pattern.as_str()),
+            => stats::show(&mut connection, daemon_id, &pattern),
 
         Commands::SearchRules { filter, domain }
-            => rules::search(&mut connection, filter.as_str(), domain.as_str()),
+            => rules::search(&mut connection, &filter, &domain),
 
         Commands::DisableRules { filter, pattern }
-            => rules::disable(&mut connection, filter.as_str(), pattern.as_str()),
+            => rules::disable(&mut connection, &filter, &pattern),
 
         Commands::EnableRules { filter, pattern }
-            => rules::enable(&mut connection, filter.as_str(), pattern.as_str()),
+            => rules::enable(&mut connection, &filter, &pattern),
 
-        Commands::AutoFeed { path_to_sources }
-            => feed::auto(&mut connection, &path_to_sources),
+        Commands::AddIps { source, filter, ttl, ips }
+            => rules::add_ips(&mut connection, &source, &filter, &ttl, ips),
 
-        Commands::Feed { path_to_list, filter, source }
-            => feed::add_to_filter(&mut connection, &path_to_list, filter.as_str(), source.as_str()),
+        Commands::RemoveIps { filter, ips }
+            => rules::remove_ips(&mut connection, &filter, ips),
 
-        Commands::AddRule { filter, source, domain, ip1, ip2 }
-            => rules::add(&mut connection, filter.as_str(), source.as_str(), domain.as_str(), ip1, ip2),
+        Commands::FeedFilter { path_to_list, source, filter, ttl }
+            => rules::feed_filter(&mut connection, &path_to_list, &source, &filter, &ttl),
 
-        Commands::DelRule { filter, domain, ip }
-            => rules::delete(&mut connection, filter.as_str(), domain.as_str(), ip),
+        Commands::AddDomain { filter, source, domain, ttl, ip1, ip2 }
+            => rules::add_domain(&mut connection, &filter, &source, &domain, &ttl, ip1, ip2),
+
+        Commands::RemoveDomain { filter, domain, ip_ver }
+            => rules::remove_domain(&mut connection, &filter, &domain, ip_ver),
     };
 
     match result {

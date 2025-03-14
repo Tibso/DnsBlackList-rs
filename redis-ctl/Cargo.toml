@@ -1,17 +1,16 @@
 [package]
 name = "redis-ctl"
-version = "1.0.5"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.38"
-clap = {version = "4.5.18", features = ["derive"]}
-redis = {version = "0.27.2", features = ["aio", "tokio-comp", "connection-manager"]}
-reqwest = {version = "0.12.7", features = ["blocking"]}
-serde = {version = "1.0.210", features = ["derive"]}
-serde_json = {version = "1.0.128", features = ["std"]}
+clap = {version = "4.5.32", features = ["derive"]}
+redis = {version = "0.28.2", features = ["aio", "tokio-comp", "connection-manager"]}
+serde = {version = "1.0.219", features = ["derive"]}
+serde_json = {version = "1.0.140", features = ["std"]}
+time = "0.3.39"
 
 [lints.clippy]
 str_to_string = "warn"

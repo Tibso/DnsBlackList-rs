@@ -1,13 +1,11 @@
-# dnslrd
+- rethink and implement features
+- make dns client per forwarder and run in own thread/task
+- make redis-manager run in own thread/task
 
-- ensure every record type query have expected behavior by addind tests
+# dnslrd
 
 - graceful shutdown
 
-- redis_manager .req_packed_commands() or connection.pipeline()
-
 # redis-ctl
 
-- investigate Box<[u8]> to reduce memory usage of auto_feed
-
-- investigate ahash to speed up hashing of sets
+- add possiblity that TTL will simply be an int instead of "1d","1m","1y" 

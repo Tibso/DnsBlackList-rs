@@ -1,5 +1,8 @@
 # **DnsBlackList-rs**
 
+# THIS README IS NOT UP TO DATE ANYMORE
+# IT WILL BE UPDATED WHEN THE PROJECT IS NEAR COMPLETION
+
 DNS resolver with custom rules using [Hickory DNS](https://github.com/hickory-dns/hickory-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 
 This DNS resolver **filters queries** using a **blacklist** from a Redis database. The resolver **lies** to DNS requests asking for **domains** that are known as **dangerous or unwanted** to **protect** its **users** from them.
@@ -82,15 +85,6 @@ The **DNS forwarders** that will **handle** the **forwarded requests**.
 
 + 203.0.113.0.1:53
 + [::1] :53
-
-### **Sinks**
-
-The **default IPs** that will be **answered** to **blocked requests**. These IPs are used unless the matched rule has a specific IP configured as answer. The order does not matter.
-
-[SET] DBL;sinks;*[DAEMON_ID]*
-
-+ 127.0.0.1
-+ ::1
 
 ### **Filters**
 
@@ -369,7 +363,6 @@ Commands:
   remove-binds        Remove binds
   add-forwarders      Add new forwarders
   remove-forwarders   Remove forwarders
-  set-sinks           Overwrite the 2 sinks
   add-blocked-ips     Add new blocked IPs
   remove-blocked-ips  Removed blocked IPs
   add-filters         Add filters
@@ -420,20 +413,6 @@ Usage: redis-ctl <PATH_TO_CONFILE> edit-conf remove-forwarders <FORWARDER1> [FOR
 ```
 
 **Removes forwarders** from the daemon's **configuration**.
-
-### ***set-sinks***
-
-```
-Usage: redis-ctl <PATH_TO_CONFILE> edit-conf set-sinks <IP1> <IP2>
-```
-
-**Overwrites** the **sink ips** of the daemon's **configuration**.
-
-There can **only** be **2** sink ips and there must be a **v4** **and** a **v6**. The order does not matter.
-
-+ Example:
-
-  `[...] edit-conf set-sinks 127.0.0.1 ::1`
 
 ### ***add-blocked-ips***
 
