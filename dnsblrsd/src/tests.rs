@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::resolver::{self, SortedRecords};
+    use crate::resolver::{self, Records};
 
     use std::{str::FromStr, net::Ipv4Addr};
 
@@ -19,7 +19,7 @@ mod tests {
             RecordData::into_rdata(rdata::A(Ipv4Addr::from_str("127.0.0.1").unwrap()))
         );
 
-        let mut sorted_records = SortedRecords::new();
+        let mut sorted_records = Records::new();
         resolver::sort_records(lookup.records(), &query_name, query_type, &mut sorted_records);
 
         assert_eq!(sorted_records.answer.len(), 1);
