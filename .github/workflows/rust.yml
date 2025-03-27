@@ -22,13 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build dnsblrsd
-        run: cargo build --manifest-path ./dnsblrsd/Cargo.toml --verbose
+        run: cargo build -p dnsblrsd --verbose
       - name: Test dnsblrsd
-        run: cargo test --manifest-path ./dnsblrsd/Cargo.toml --verbose
+        run: cargo test -p dnsblrsd --verbose
 
   redis-ctl:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Build redis-ctl
-        run: cargo build --manifest-path ./redis-ctl/Cargo.toml --verbose
+        run: cargo build -p redis-ctl --verbose
