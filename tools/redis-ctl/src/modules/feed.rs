@@ -5,30 +5,30 @@
 //    path::PathBuf, process::ExitCode, collections::HashSet, net::IpAddr,
 //    io::{BufReader, BufRead}
 //};
-//use serde::Deserialize;
 //use reqwest;
 //use redis::{cmd, Commands, Connection, RedisResult};
-//
-//struct Source {
-//    name: String,
-//    filters: Vec<Filter>
-//}
-//struct Filter {
-//    name: String,
-//    domains: Vec<String>
-//}
-//
-//#[derive(Deserialize)]
-//struct SourcesLists {
-//    name: String,
-//    lists: Vec<List>
-//}
-//#[derive(Deserialize)]
-//struct List {
-//    filter: String,
-//    urls: Vec<String>
-//}
-//
+use serde::Deserialize;
+
+struct Source {
+    name: String,
+    filters: Vec<Filter>
+}
+struct Filter {
+    name: String,
+    domains: Vec<String>
+}
+
+#[derive(Deserialize)]
+struct SourcesLists {
+    name: String,
+    lists: Vec<List>
+}
+#[derive(Deserialize)]
+struct List {
+    filter: String,
+    urls: Vec<String>
+}
+
 ///// Automatically updates the rules using the "dnsblrs_sources.json" file
 ///// in a non-blocking fashion
 //pub fn auto (
@@ -57,7 +57,7 @@
 //
 //    println!("Downloading and encoding files...");
 //    let mut dl_cnt = 0usize;
-//    
+//
 //    let mut srcs: Vec<Source> = vec![];
 //    for src in srcs_list {
 //        let mut filters: Vec<Filter> = vec![];
@@ -71,12 +71,12 @@
 //                        continue
 //                    }
 //                };
-//                
+//
 //                if ! resp.status().is_success() {
 //                    println!("Error requesting for \"{url}\":\n{}\nSkipping...", resp.status());
 //                    continue
 //                }
-//        
+//
 //                let text: String = match resp.text() {
 //                    Ok(text) => text,
 //                    Err(err) => {
@@ -95,7 +95,7 @@
 //                    if line.trim().starts_with('#') {
 //                        continue
 //                    }
-//                    
+//
 //                    // Input file could be formatted like "hosts.txt"
 //                    let parts: Vec<&str> = line.split_whitespace().collect();
 //                    match parts.len() {

@@ -1,7 +1,6 @@
 # **DnsBlackList-rs**
 
 # THIS README IS NOT UP TO DATE ANYMORE
-# IT WILL BE UPDATED WHEN THE PROJECT IS NEAR COMPLETION
 
 DNS resolver with custom rules using [Hickory DNS](https://github.com/hickory-dns/hickory-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs).
 

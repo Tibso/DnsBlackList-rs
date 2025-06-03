@@ -6,12 +6,12 @@ use redis::{Commands, Connection, RedisResult, pipe};
 use super::{is_valid_domain, get_date, time_abrv_to_secs};
 
 /// Disable rules that match a pattern
-pub fn disable (
+pub fn disable(
     con: &mut Connection,
     filter: &str,
     pattern: &str
 ) -> RedisResult<ExitCode> {
-    let keys: Vec<String> = con.scan_match(format!("DBL;RD;{filter};{pattern}"))?.collect();
+    let keys: Vec<String> = con.scan_match(format!("DBL;D;{filter};{pattern}"))?.collect();
     if keys.is_empty() {
         println!("No match for: {pattern}");
     } else {
@@ -26,12 +26,12 @@ pub fn disable (
 }
 
 /// Enable rules that match a pattern
-pub fn enable (
+pub fn enable(
     con: &mut Connection,
     filter: &str,
     pattern: &str
 ) -> RedisResult<ExitCode> {
-    let keys: Vec<String> = con.scan_match(format!("DBL;RD;{filter};{pattern}"))?.collect();
+    let keys: Vec<String> = con.scan_match(format!("DBL;D;{filter};{pattern}"))?.collect();
     if keys.is_empty() {
         println!("No match for: {pattern}");
     } else {
@@ -46,7 +46,7 @@ pub fn enable (
 }
 
 /// Add a new domain rule
-pub fn add_domain (
+pub fn add_domain(
     con: &mut Connection,
     filter: &str,
     src: &str,
@@ -65,7 +65,7 @@ pub fn add_domain (
     };
    
     let mut pipe = pipe();
-    let key = format!("DBL;RD;{filter};{domain}");
+    let key = format!("DBL;D;{filter};{domain}");
     let fields = [("enabled","1"),("date",&get_date()),("src",src)];
     match (ip1, ip2) {
         (None, None) => {
@@ -133,7 +133,7 @@ pub fn add_domain (
 }
 
 /// Delete a domain rule or only one IP version
-pub fn remove_domain (
+pub fn remove_domain(
     con: &mut Connection,
     filter: &str,
     domain: &str,
@@ -144,8 +144,8 @@ pub fn remove_domain (
         return Ok(ExitCode::from(65))
     }
 
-    let key = format!("DBL;RD;{filter};{domain}");
-    let del_cnt: usize = match ip_ver {
+    let key = format!("DBL;D;{filter};{domain}");
+    let del_cnt: u64 = match ip_ver {
         None => {
             println!("No IP version provided, deleting domain rule");
             con.del(key)?
@@ -170,7 +170,7 @@ pub fn remove_domain (
 }
 
 /// Add IP rules
-pub fn add_ips (
+pub fn add_ips(
     con: &mut Connection,
     src: &str,
     filter: &str,
@@ -187,7 +187,7 @@ pub fn add_ips (
     };
 
     let mut pipe = pipe();
-    let keys: Vec<String> = ips.iter().map(|ip| format!("DBL;RI;{filter};{ip}")).collect();
+    let keys: Vec<String> = ips.iter().map(|ip| format!("DBL;I;{filter};{ip}")).collect();
     for key in keys {
         pipe.hset_multiple(&key, &[("enabled","1"),("date",&get_date()),("src",src)])
             .expire(key, secs_to_expiry);
@@ -198,7 +198,7 @@ pub fn add_ips (
 }
 
 /// Remove IP rules
-pub fn remove_ips (
+pub fn remove_ips(
     con: &mut Connection,
     filter: &str,
     ips: Vec<String>
@@ -208,14 +208,14 @@ pub fn remove_ips (
         return Ok(ExitCode::from(65))
     }
 
-    let keys: Vec<String> = ips.iter().map(|ip| format!("DBL;RI;{filter};{ip}")).collect();
+    let keys: Vec<String> = ips.iter().map(|ip| format!("DBL;I;{filter};{ip}")).collect();
     let del_cnt: usize = con.del(keys)?;
     println!("{del_cnt} IP rule(s) removed");
     Ok(ExitCode::SUCCESS)
 }
 
 /// Feed a list to a filter
-pub fn feed_filter (
+pub fn feed_filter(
     con: &mut Connection,
     path_to_list: &PathBuf,
     src: &str,
@@ -249,7 +249,7 @@ pub fn feed_filter (
         };
 
         if item.parse::<IpAddr>().is_ok() {
-            let key = format!("DBL;RI;{filter};{item}");
+            let key = format!("DBL;I;{filter};{item}");
             if pipe()
                 .hset_multiple(&key, &fields)
                 .expire(&key, secs_to_expiry)
@@ -258,7 +258,7 @@ pub fn feed_filter (
                 add_cnt += 1;
             } 
         } else if is_valid_domain(item) {
-            let key = format!("DBL;RD;{filter};{item}");
+            let key = format!("DBL;D;{filter};{item}");
             if pipe()
                 .hset_multiple(&key, &fields)
                 .expire(&key, secs_to_expiry)
@@ -274,12 +274,12 @@ pub fn feed_filter (
 }
 
 /// Search for rules using a pattern
-pub fn search (
+pub fn search(
     con: &mut Connection,
     filter: &str,
     pattern: &str
 ) -> RedisResult<ExitCode> {
-    let scan_string = format!("DBL;R[D-I];{filter};{pattern}");
+    let scan_string = format!("DBL;[D-I];{filter};{pattern}");
     let keys: Vec<String> = con.scan_match(&scan_string)?.collect();
     if keys.is_empty() {
         println!("No match for: {scan_string}");

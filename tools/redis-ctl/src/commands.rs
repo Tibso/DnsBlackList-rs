@@ -18,13 +18,6 @@ pub struct Args {
 /// The commands that are available
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Display the daemon's configuration and the 'redis-ctl' version
-    ShowConf {},
-
-    /// Reconfigure a parameter of the daemon's configuration
-    #[command(subcommand)]
-    EditConf (Subcommands),
-
     /// Add a new domain rule
     AddDomain {
         source: String,
@@ -83,30 +76,8 @@ pub enum Commands {
     },
 
     /// Display stats about IP addresses that match a pattern
-    ShowStats {pattern: String},
+    // ShowStats {pattern: String},
 
     /// Clear stats about IP addresses that match a pattern
-    ClearStats {pattern: String},
-}
-
-/// The subcommands that modify the dnsblrsd configuration
-#[derive(Subcommand)]
-pub enum Subcommands {
-    /// Add new binds
-    AddBinds {binds: Vec<String>},
-
-    /// Remove binds
-    RemoveBinds {binds: Vec<String>},
-
-    /// Add new forwarders
-    AddForwarders {forwarders: Vec<String>},
-
-    /// Remove forwarders
-    RemoveForwarders {forwarders: Vec<String>},
-
-    /// Add filters
-    AddFilters {filters: Vec<String>},
-
-    /// Remove filters
-    RemoveFilters {filters: Vec<String>}
+    // ClearStats {pattern: String},
 }

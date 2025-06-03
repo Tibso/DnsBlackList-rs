@@ -1,84 +1,55 @@
-use std::{io, time::SystemTimeError};
+use core::fmt;
+use std::io;
 use redis::RedisError;
 use hickory_proto::error::ProtoError;
 use hickory_resolver::error::ResolveError;
 
 pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
 
-#[derive(Debug)]
-/// The custom error structure
-pub struct DnsBlrsError {
-    kind: DnsBlrsErrorKind
+/// Custom error type
+pub enum DnsBlrsError {
+    InvalidOpCode(u8),
+    MessageTypeNotQuery,
+    SocketBinding,
+
+    Redis(RedisError),
+    IO(io::Error),
+    Resolver(ResolveError),
+    // SystemTime(SystemTimeError),
+    Proto(ProtoError)
 }
-impl DnsBlrsError {
-    /// Links the error types to the error structure
-    pub fn kind(self) -> DnsBlrsErrorKind {
-        self.kind
-    }
-}
-impl From<DnsBlrsErrorKind> for DnsBlrsError {
-    /// Implements the From trait to construct the error structure with the error types
-    fn from(kind: DnsBlrsErrorKind) -> Self {
-        Self {kind}
+
+impl fmt::Display for DnsBlrsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DnsBlrsError::InvalidOpCode(code) => write!(f, "Opcode received '{code}' was not query (0)"),
+            DnsBlrsError::MessageTypeNotQuery => write!(f, "Message type received was not query"),
+            DnsBlrsError::SocketBinding => write!(f, "Failed to bind any socket"),
+            DnsBlrsError::Redis(e) => write!(f, "A Redis error occured: {e}"),
+            DnsBlrsError::IO(e) => write!(f, "An IO error occured: {e}"),
+            DnsBlrsError::Resolver(e) => write!(f, "A Resolver error occured: {e}"),
+            DnsBlrsError::Proto(e) => write!(f, "A Proto error occured: {e}")
+        }
     }
 }
 
 impl From<RedisError> for DnsBlrsError {
-    fn from(err: RedisError) -> Self {
-        Self {
-            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Redis(err))
-        }
-    }
-}
-impl From<SystemTimeError> for DnsBlrsError {
-    fn from(err: SystemTimeError) -> Self {
-        Self {
-            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::SystemTime(err))
-        }
+    fn from(e: RedisError) -> Self {
+        DnsBlrsError::Redis(e)
     }
 }
 impl From<ResolveError> for DnsBlrsError {
-    fn from(err: ResolveError) -> Self {
-        Self {
-            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))
-        }
+    fn from(e: ResolveError) -> Self {
+        DnsBlrsError::Resolver(e)
     }
 }
 impl From<ProtoError> for DnsBlrsError {
-    fn from(err: ProtoError) -> Self {
-        Self {
-            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(err))
-        }
+    fn from(e: ProtoError) -> Self {
+        DnsBlrsError::Proto(e)
     }
 }
 impl From<io::Error> for DnsBlrsError {
-    fn from(err: io::Error) -> Self {
-        Self {
-            kind: DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::IO(err))
-        }
+    fn from(e: io::Error) -> Self {
+        DnsBlrsError::IO(e)
     }
-}
-
-#[derive(Debug)]
-/// Custom error type
-pub enum DnsBlrsErrorKind {
-    InvalidOpCode,
-    InvalidMessageType,
-    InvalidRule,
-    SocketBinding,
-    IncompleteConf,
-
-    // This custom error type wraps the external crates errors
-    // to enable proper error propagation
-    ExternCrateError(ExternCrateErrorKind),
-}
-
-#[derive(Debug)]
-/// The errors from external crates
-pub enum ExternCrateErrorKind {
-    Redis(RedisError),
-    IO(io::Error),
-    Resolver(ResolveError),
-    SystemTime(SystemTimeError),
-    Proto(ProtoError)
 }

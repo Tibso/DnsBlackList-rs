@@ -1,6 +1,6 @@
-use crate::{errors::{DnsBlrsError, DnsBlrsErrorKind, DnsBlrsResult, ExternCrateErrorKind}, handler::{Handler, TTL_1H}};
+use crate::{errors::{DnsBlrsError, DnsBlrsResult}, handler::TTL_1H};
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use hickory_proto::{
     op::{Header, ResponseCode}, rr::{Record, RecordData, RecordType},
     xfer::Protocol, error::ProtoErrorKind};
@@ -8,7 +8,7 @@ use hickory_resolver::{
     config::{NameServerConfig, ResolverConfig, ResolverOpts},
     Name, TokioAsyncResolver
 };
-use hickory_server::{authority::MessageResponseBuilder, server::Request};
+use hickory_server::server::Request;
 
 /// Builds the resolver that will forward the requests to other DNS servers
 pub fn build(forwarders: Vec<SocketAddr>)
@@ -50,27 +50,27 @@ impl Records {
         }
     }
 }
+impl Default for Records {
+    fn default() -> Self {
+        Records::new()
+    }
+}
 
 /// Resolves the query
 pub async fn resolve(
-    handler: &Handler,
+    resolver: &Arc<TokioAsyncResolver>,
     request: &Request,
-    builder_header: (&mut MessageResponseBuilder<'_>, &mut Header)
+    wants_dnssec: bool,
+    header: &mut Header
 ) -> DnsBlrsResult<Records> {
-    let resolver = handler.resolver.clone();
     let (query_name, qtype) = {
         let query = request.query();
         (query.name(), query.query_type())
     };
-    let (builder, header) = builder_header;
-    let wants_dnssec = request.edns().is_some_and(|edns| {
-        builder.edns(edns.clone());
-        edns.dnssec_ok()
-    });
 
     let mut sorted_records = Records::new();
     match resolver.lookup(query_name, qtype, wants_dnssec).await {
-        Err(err) => match err.proto() {
+        Err(e) => match e.proto() {
             Some(proto_err) => match proto_err.kind() {
                 ProtoErrorKind::NoRecordsFound { response_code: ResponseCode::Refused, .. }
                     => { header.set_response_code(ResponseCode::Refused); },
@@ -81,7 +81,7 @@ pub async fn resolve(
                         match response_code {
                             ResponseCode::NXDomain => { header.set_response_code(ResponseCode::NXDomain); },
                             ResponseCode::NoError => { header.set_response_code(ResponseCode::NoError); },
-                            _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(proto_err.clone()))))
+                            _ => return Err(DnsBlrsError::Proto(proto_err.clone()))
                         }
                         if let Some(soa) = soa {
                             sorted_records.soas.push(Record::from_rdata(query_name.into(), TTL_1H, soa.clone().into_data().into_rdata()));
@@ -93,9 +93,9 @@ pub async fn resolve(
                             }
                         }
                     },
-                _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Proto(proto_err.clone()))))
+                _ => return Err(DnsBlrsError::Proto(proto_err.clone()))
             },
-            _ => return Err(DnsBlrsError::from(DnsBlrsErrorKind::ExternCrateError(ExternCrateErrorKind::Resolver(err))))
+            _ => return Err(DnsBlrsError::Resolver(e.clone()))
         },
         Ok(lookup) => {
             header.set_response_code(ResponseCode::NoError);
@@ -135,8 +135,8 @@ pub fn sort_records (
             },
             RecordType::RRSIG => {
                 let data_type_covered = record.data().clone()
-                    .into_dnssec().expect("Record data has to be DNSSECRData")
-                    .into_rrsig().expect("DNSSECRData has to be RRSIG")
+                    .into_dnssec().unwrap()
+                    .into_rrsig().unwrap()
                     .type_covered();
 
                 if data_type_covered == qtype && *record.name() == *query_name {
@@ -155,7 +155,7 @@ pub fn sort_records (
             },
             RecordType::CNAME => {
                 cname = record.data().clone()
-                    .into_cname().expect("Record data has to be CNAME")
+                    .into_cname().unwrap()
                     .to_lowercase();
                 answer.push(record.clone())
             },

@@ -4,16 +4,13 @@ use redis::{aio::ConnectionManager, Client};
 use tracing::info;
 
 /// Builds the Redis connection manager
-pub async fn build_manager(
-    daemon_id: &str,
-    redis_addr: &str
-) -> DnsBlrsResult<ConnectionManager> {
+pub async fn build_manager(redis_addr: &str) -> DnsBlrsResult<ConnectionManager> {
     // A client is built and probes the Redis server to check its availability
     let client = Client::open(format!("redis://{redis_addr}/"))?;
 
     // This manager allows the connection to be cloned and used simultaneously across different threads
     let mngr = client.get_connection_manager().await?;
-    info!("{daemon_id}: Redis connection manager built");
+    info!("Redis connection manager built");
 
     Ok(mngr)
 }
