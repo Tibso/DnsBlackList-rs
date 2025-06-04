@@ -1,6 +1,6 @@
 use crate::{
     errors::{DnsBlrsError, DnsBlrsResult},
-    handler::Handler, misp::MispAPIConf
+    handler::Handler, features::misp::MispAPIConf
 };
 
 use std::{fs, process::exit, time::Duration,net::SocketAddr};
@@ -9,8 +9,6 @@ use tokio::net::{TcpListener, UdpSocket};
 use tracing::{info, error, warn};
 use serde::Deserialize;
 use serde_norway::from_str;
-
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 

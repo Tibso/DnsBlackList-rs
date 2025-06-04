@@ -1,13 +1,6 @@
 #![forbid(unsafe_code)]
 
-mod config;
-mod errors;
-mod redis_mod;
-mod signals;
-mod handler;
-mod resolver;
-mod misp;
-mod log;
+use dnsblrsd::{config, log, redis_mod, resolver, handler, signals, features::misp, VERSION};
 
 use std::{process::ExitCode, sync::Arc};
 use hickory_server::ServerFuture;
@@ -23,7 +16,7 @@ async fn main()
 
     log::init_logging(daemon_id);
 
-    info!("Server version: {}", config::VERSION);
+    info!("Server version: {VERSION}");
     info!("Initializing server...");
     info!("Redis server: {redis_addr}");
 

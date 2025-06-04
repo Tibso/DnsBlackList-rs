@@ -75,9 +75,9 @@ pub enum Commands {
         ttl: String
     },
 
-    /// Display stats about IP addresses that match a pattern
+    // /// Display stats about IP addresses that match a pattern
     // ShowStats {pattern: String},
 
-    /// Clear stats about IP addresses that match a pattern
+    // /// Clear stats about IP addresses that match a pattern
     // ClearStats {pattern: String},
 }

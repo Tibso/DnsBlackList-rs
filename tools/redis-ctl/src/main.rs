@@ -4,20 +4,12 @@ mod commands;
 mod modules;
 
 use crate::{commands::{Args, Commands}, modules::rules};
+use dnsblrsd::config::Config;
 
+use clap::Parser;
 use redis::Client;
-use std::{fs, process::ExitCode, net::SocketAddr};
-use serde::Deserialize;
+use std::{fs, process::ExitCode};
 use serde_norway::from_str;
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[derive(Deserialize)]
-/// The main configuration structure
-pub struct Config {
-    pub daemon_id: String,
-    pub redis_addr: SocketAddr
-}
 
 fn main() -> ExitCode {
     // Arguments are parsed and stored
@@ -25,7 +17,7 @@ fn main() -> ExitCode {
     let path_to_confile = &args.path_to_confile;
 
     // First argument should be the 'path_to_confile'
-    let (daemon_id, redis_addr) = {
+    let redis_addr = {
         let data = match fs::read_to_string(path_to_confile) {
             Ok(data) => data,
             Err(e) => {
@@ -40,7 +32,7 @@ fn main() -> ExitCode {
                 return ExitCode::from(78) // CONFIG
             }
         };
-        (config.daemon_id.as_str(), config.redis_addr.to_string())
+        config.redis_addr.to_string()
     };
 
     let client = match Client::open(format!("redis://{redis_addr}/")) {
