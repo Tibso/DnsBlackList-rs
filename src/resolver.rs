@@ -3,16 +3,15 @@ use crate::{errors::{DnsBlrsError, DnsBlrsResult}, handler::TTL_1H};
 use std::{net::SocketAddr, sync::Arc};
 use hickory_proto::{
     op::{Header, ResponseCode}, rr::{Record, RecordData, RecordType},
-    xfer::Protocol, error::ProtoErrorKind};
+    xfer::Protocol, ProtoErrorKind};
 use hickory_resolver::{
     config::{NameServerConfig, ResolverConfig, ResolverOpts},
-    Name, TokioAsyncResolver
+    Name, TokioResolver
 };
 use hickory_server::server::Request;
 
 /// Builds the resolver that will forward the requests to other DNS servers
-pub fn build(forwarders: Vec<SocketAddr>)
--> TokioAsyncResolver {
+pub fn build(forwarders: Vec<SocketAddr>) -> TokioResolver {
     let mut resolver_config = ResolverConfig::new();
 
     for socket_addr in forwarders {
@@ -28,10 +27,12 @@ pub fn build(forwarders: Vec<SocketAddr>)
     resolver_opts.num_concurrent_reqs = 0;
     // Preserve intermediate records such as CNAME records
     resolver_opts.preserve_intermediates = true;
-    // Enable EDNS for larger records
+    // Enable Extended DNS
     resolver_opts.edns0 = true;
+    // Enable DNSSEC validation
+    resolver_opts.validate = true;
 
-    TokioAsyncResolver::tokio(resolver_config, resolver_opts)
+    TokioResolver::builder_with_config(resolver_config, )
 }
 
 pub struct Records {
@@ -58,7 +59,7 @@ impl Default for Records {
 
 /// Resolves the query
 pub async fn resolve(
-    resolver: &Arc<TokioAsyncResolver>,
+    resolver: &Arc<TokioResolver>,
     request: &Request,
     wants_dnssec: bool,
     header: &mut Header

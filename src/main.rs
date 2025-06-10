@@ -11,7 +11,6 @@ async fn main()
 -> ExitCode {
     let config = config::read_confile("dnsblrsd.conf");
     let (daemon_id, redis_addr) = (config.daemon_id, config.redis_addr.to_string());
-    // "Controlled" memory-leak, doesn't feel clean
     let daemon_id: &'static str = Box::leak(Box::from(daemon_id));
 
     log::init_logging(daemon_id);
@@ -34,7 +33,7 @@ async fn main()
     };
     let signals_handler = signals.handle();
 
-    let resolver = resolver::build(config.forwarders);
+    let resolver = resolver::builder_tokio(config.forwarders);
     info!("Resolver built");
     let resolver = Arc::new(resolver);
 
