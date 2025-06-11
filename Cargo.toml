@@ -19,10 +19,10 @@ misp = []
 [dependencies]
 async-trait = "0.1.88"
 futures-util = "0.3.31"
-hickory-client = "0.25.2"
-hickory-proto = { version = "0.25.2", features = ["dnssec-ring"] }
-hickory-resolver = { version = "0.25.2", features = ["tokio"] }
-hickory-server = "0.25.2"
+hickory-client = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d" }
+hickory-proto = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d", features = ["dnssec", "dnssec-ring"] }
+hickory-resolver = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d" }
+hickory-server = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d" }
 redis = { version = "0.30.0", features = ["aio", "tokio-comp", "connection-manager"] }
 reqwest = { version = "0.12.15", features = ["json"] }
 serde = { version = "1.0.219", features = ["derive"] }

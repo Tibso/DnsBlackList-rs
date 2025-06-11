@@ -2,39 +2,37 @@ use crate::{errors::{DnsBlrsError, DnsBlrsResult}, handler::TTL_1H};
 
 use std::{net::SocketAddr, sync::Arc};
 use hickory_proto::{
-    op::{Header, ResponseCode}, rr::{Record, RecordData, RecordType},
-    xfer::Protocol, ProtoErrorKind};
+    op::{Header, ResponseCode}, rr::{Record, RecordData, RecordType}, xfer::Protocol, error::ProtoErrorKind
+};
 use hickory_resolver::{
-    config::{NameServerConfig, ResolverConfig, ResolverOpts},
-    Name, TokioResolver
+    config::{NameServerConfig, ResolverConfig, ResolverOpts}, Name, TokioAsyncResolver
 };
 use hickory_server::server::Request;
 
 /// Builds the resolver that will forward the requests to other DNS servers
-pub fn build(forwarders: Vec<SocketAddr>) -> TokioResolver {
-    let mut resolver_config = ResolverConfig::new();
+pub fn build(forwarders: Vec<SocketAddr>) -> TokioAsyncResolver {
+    let mut config = ResolverConfig::new();
 
     for socket_addr in forwarders {
         let ns_udp = NameServerConfig::new(socket_addr, Protocol::Udp);
-        resolver_config.add_name_server(ns_udp);
+        config.add_name_server(ns_udp);
         let ns_tcp = NameServerConfig::new(socket_addr, Protocol::Tcp);
-        resolver_config.add_name_server(ns_tcp);
+        config.add_name_server(ns_tcp);
     }
 
-    let mut resolver_opts: ResolverOpts = ResolverOpts::default();
+    let mut opts = ResolverOpts::default();
     // We do not want the resolver to send concurrent queries,
     // as it would increase network load for little to no speed benefit
-    resolver_opts.num_concurrent_reqs = 0;
+    opts.num_concurrent_reqs = 0;
     // Preserve intermediate records such as CNAME records
-    resolver_opts.preserve_intermediates = true;
+    opts.preserve_intermediates = true;
     // Enable Extended DNS
-    resolver_opts.edns0 = true;
-    // Enable DNSSEC validation
-    resolver_opts.validate = true;
+    opts.edns0 = true;
 
-    TokioResolver::builder_with_config(resolver_config, )
+    TokioAsyncResolver::tokio(config, opts)
 }
 
+/// Structure holding the different parts of a DNS response
 pub struct Records {
     pub answer: Vec<Record>,
     pub name_servers: Vec<Record>,
@@ -59,7 +57,7 @@ impl Default for Records {
 
 /// Resolves the query
 pub async fn resolve(
-    resolver: &Arc<TokioResolver>,
+    resolver: &Arc<TokioAsyncResolver>,
     request: &Request,
     wants_dnssec: bool,
     header: &mut Header
@@ -79,10 +77,10 @@ pub async fn resolve(
                     => { header.set_response_code(ResponseCode::NotImp); },
                 ProtoErrorKind::NoRecordsFound { response_code, soa, ns, .. }
                     => {
-                        match response_code {
-                            ResponseCode::NXDomain => { header.set_response_code(ResponseCode::NXDomain); },
-                            ResponseCode::NoError => { header.set_response_code(ResponseCode::NoError); },
-                            _ => return Err(DnsBlrsError::Proto(proto_err.clone()))
+                        if matches!(response_code, ResponseCode::NXDomain | ResponseCode::NoError) {
+                            header.set_response_code(*response_code);
+                        } else {
+                            return Err(DnsBlrsError::Proto(proto_err.clone()))
                         }
                         if let Some(soa) = soa {
                             sorted_records.soas.push(Record::from_rdata(query_name.into(), TTL_1H, soa.clone().into_data().into_rdata()));

@@ -33,7 +33,7 @@ async fn main()
     };
     let signals_handler = signals.handle();
 
-    let resolver = resolver::builder_tokio(config.forwarders);
+    let resolver = resolver::build(config.forwarders);
     info!("Resolver built");
     let resolver = Arc::new(resolver);
 

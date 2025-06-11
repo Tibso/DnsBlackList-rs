@@ -7,7 +7,7 @@ use tracing::info;
 /// Checks if the requested domain is blacklisted
 pub async fn is_domain_blacklisted(
     handler: &Handler,
-    request: &Request,
+    request: &Request
 ) -> DnsBlrsResult<bool> {
     let query = request.query();
     let request_info = request.request_info();

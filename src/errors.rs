@@ -11,6 +11,7 @@ pub enum DnsBlrsError {
     InvalidOpCode(u8),
     MessageTypeNotQuery,
     SocketBinding,
+    NoQueryInRequest,
 
     Redis(RedisError),
     IO(io::Error),
@@ -25,6 +26,7 @@ impl fmt::Display for DnsBlrsError {
             DnsBlrsError::InvalidOpCode(code) => write!(f, "Opcode received '{code}' was not query (0)"),
             DnsBlrsError::MessageTypeNotQuery => write!(f, "Message type received was not query"),
             DnsBlrsError::SocketBinding => write!(f, "Failed to bind any socket"),
+            DnsBlrsError::NoQueryInRequest => write!(f, "No query found in request"),
             DnsBlrsError::Redis(e) => write!(f, "A Redis error occured: {e}"),
             DnsBlrsError::IO(e) => write!(f, "An IO error occured: {e}"),
             DnsBlrsError::Resolver(e) => write!(f, "A Resolver error occured: {e}"),

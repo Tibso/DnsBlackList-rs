@@ -1,9 +1,7 @@
-- use new version of hickory_dns
-- check if there's another way to not sort records of resolver
-- make dns client per forwarder and run in own thread/task
-- rethink and implement features
-- make redis-manager run in own thread/task
+- make resolver per forwarder and run in own thread/task
+- make it so in config is defined the binds along with the filters they'll have to serve
 -> ultimately remove Redis dependency
+- rethink and implement features
 
 # dnslrd
 
