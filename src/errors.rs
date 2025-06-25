@@ -1,16 +1,17 @@
 use core::fmt;
-use std::io;
+use std::{io, result};
 use redis::RedisError;
 use hickory_proto::error::ProtoError;
 use hickory_resolver::error::ResolveError;
 
-pub type DnsBlrsResult<T> = std::result::Result<T, DnsBlrsError>;
+pub type DnsBlrsResult<T> = result::Result<T, DnsBlrsError>;
 
 /// Custom error type
 pub enum DnsBlrsError {
     InvalidOpCode(u8),
     MessageTypeNotQuery,
     SocketBinding,
+    SocketFilters,
     NoQueryInRequest,
 
     Redis(RedisError),
@@ -26,6 +27,7 @@ impl fmt::Display for DnsBlrsError {
             DnsBlrsError::InvalidOpCode(code) => write!(f, "Opcode received '{code}' was not query (0)"),
             DnsBlrsError::MessageTypeNotQuery => write!(f, "Message type received was not query"),
             DnsBlrsError::SocketBinding => write!(f, "Failed to bind any socket"),
+            DnsBlrsError::SocketFilters => write!(f, "Failed to find filters for a socket"),
             DnsBlrsError::NoQueryInRequest => write!(f, "No query found in request"),
             DnsBlrsError::Redis(e) => write!(f, "A Redis error occured: {e}"),
             DnsBlrsError::IO(e) => write!(f, "An IO error occured: {e}"),

@@ -1,11 +1,13 @@
 - make resolver per forwarder and run in own thread/task
-- make it so in config is defined the binds along with the filters they'll have to serve
 -> ultimately remove Redis dependency
-- rethink and implement features
 
-# dnslrd
+- add possibility that retention time could simply be "3m"
+
+# dnsblrsd
 
 - graceful shutdown
+- rethink and implement features
+- get rid of hickory_dns dependency -> add used service to logs for incoming requests
 
 # redis-ctl
 

@@ -1,4 +1,4 @@
-use crate::{errors::DnsBlrsResult, handler::Handler, resolver::Records};
+use crate::{errors::{DnsBlrsError, DnsBlrsResult}, handler::Handler, resolver::Records};
 
 use hickory_server::server::Request;
 use redis::pipe;
@@ -19,9 +19,12 @@ pub async fn is_domain_blacklisted(
     let parts: Vec<&str> = request_domain.split('.').collect();
     let parts_len = parts.len();
     
+    let socket_local_addr = request.socket_local_addr();
+    let filters = handler.find_filters(socket_local_addr).ok_or(DnsBlrsError::SocketFilters)?;
+
     let mut pipe = pipe();
     let mut search_domain_parts = Vec::with_capacity(parts_len);
-    for filter in &handler.filters {
+    for filter in filters {
         for i in (0..parts_len).rev() {
             search_domain_parts.insert(0, parts[i]);
             let rule = format!("DBL;RD;{filter};{}", search_domain_parts.join("."));
@@ -33,6 +36,38 @@ pub async fn is_domain_blacklisted(
     if results.into_iter().flatten().any(|x| x == 1) {
         info!("request:{} src:{}://{} QUERY:{} | Blacklisted \"{request_domain}\" found",
             request.id(), request_info.protocol, request_info.src, request_info.query);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Checks if there is a blacklisted IP in the answer section of the DNS response
+pub async fn have_blacklisted_ip(
+    handler: &Handler,
+    request: &Request,
+    records: &Records
+) -> DnsBlrsResult<bool> {
+    let request_info = request.request_info();
+    let mut redis_mngr = handler.redis_mngr.clone();
+
+    let mut pipe = pipe();
+    for record in &records.answer {
+        let Some(ip) = record.data().ip_addr() else {
+            continue
+        };
+        let ip_string = ip.to_string();
+
+        let socket_local_addr = request.socket_local_addr();
+        let filters = handler.find_filters(socket_local_addr).ok_or(DnsBlrsError::SocketFilters)?;
+        for filter in filters {
+            let rule = format!("DBL;RI;{filter};{ip_string}");
+            pipe.hget(rule, "enabled");
+        }
+    }
+    let results: Vec<Option<u8>> = pipe.query_async(&mut redis_mngr).await?;
+    if results.into_iter().flatten().any(|x| x == 1) {
+        info!("request:{} src:{}://{} QUERY:{} | A blacklisted IP was found when resolving \"{}\"",
+            request.id(), request_info.protocol, request_info.src, request_info.query, request.query().name());
         return Ok(true);
     }
     Ok(false)
@@ -65,33 +100,3 @@ pub async fn is_domain_blacklisted(
     //     response_records.answer.push(Record::from_rdata(query_name, TTL_1H, rdata));
     //     return Ok(response_records)
     // }
-
-/// Checks if there is a blacklisted IP in the answer section of the DNS response
-pub async fn have_blacklisted_ip(
-    handler: &Handler,
-    request: &Request,
-    records: &Records
-) -> DnsBlrsResult<bool> {
-    let request_info = request.request_info();
-    let mut redis_mngr = handler.redis_mngr.clone();
-
-    let mut pipe = pipe();
-    for record in &records.answer {
-        let Some(ip) = record.data().ip_addr() else {
-            continue
-        };
-        let ip_string = ip.to_string();
-
-        for filter in &handler.filters {
-            let rule = format!("DBL;RI;{filter};{ip_string}");
-            pipe.hget(rule, "enabled");
-        }
-    }
-    let results: Vec<Option<u8>> = pipe.query_async(&mut redis_mngr).await?;
-    if results.into_iter().flatten().any(|x| x == 1) {
-        info!("request:{} src:{}://{} QUERY:{} | A blacklisted IP was found when resolving \"{}\"",
-            request.id(), request_info.protocol, request_info.src, request_info.query, request.query().name());
-        return Ok(true);
-    }
-    Ok(false)
-}

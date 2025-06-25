@@ -19,12 +19,12 @@ misp = []
 [dependencies]
 async-trait = "0.1.88"
 futures-util = "0.3.31"
-hickory-client = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d" }
-hickory-proto = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d", features = ["dnssec", "dnssec-ring"] }
-hickory-resolver = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d" }
-hickory-server = { git = "https://github.com/Tibso/hickory-dns.git", rev = "cd9da3d" }
+hickory-client = { git = "https://github.com/Tibso/hickory-dns.git", rev = "a206314" }
+hickory-proto = { git = "https://github.com/Tibso/hickory-dns.git", rev = "a206314", features = ["dnssec", "dnssec-ring"] }
+hickory-resolver = { git = "https://github.com/Tibso/hickory-dns.git", rev = "a206314" }
+hickory-server = { git = "https://github.com/Tibso/hickory-dns.git", rev = "a206314" }
 redis = { version = "0.30.0", features = ["aio", "tokio-comp", "connection-manager"] }
-reqwest = { version = "0.12.15", features = ["json"] }
+reqwest = { version = "0.12.20", features = ["json"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["std"] }
 serde_norway = "0.9.42"

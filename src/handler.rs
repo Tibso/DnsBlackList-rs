@@ -1,6 +1,6 @@
-use crate::{errors::{DnsBlrsError, DnsBlrsResult}, filtering, resolver};
+use crate::{config::Service, errors::{DnsBlrsError, DnsBlrsResult}, filtering, resolver};
 
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use hickory_proto::rr::RecordType;
 use hickory_resolver::TokioAsyncResolver;
 use hickory_server::{
@@ -14,49 +14,20 @@ use async_trait::async_trait;
 
 pub const TTL_1H: u32 = 3600;
 
-#[async_trait]
-impl RequestHandler for Handler {
-    async fn handle_request <R: ResponseHandler> (
-        &self,
-        request: &Request,
-        mut response: R
-    ) -> ResponseInfo {
-        match self.try_handle_request(request, response.clone()).await {
-            // Successfully request info returned to the subscriber to be displayed
-            Ok(response_info) => response_info,
-            Err(e) => {
-                let builder = MessageResponseBuilder::from_message_request(request);
-
-                let mut header = Header::response_from_request(request.header());
-                header.set_authoritative(false);
-                header.set_recursion_available(true);
-
-                let request_info = request.request_info();
-                let msg_stats = format!("request:{} src:{}://{} QUERY:{}",
-                    request.id(), request_info.protocol, request_info.src, request_info.query
-                );
-                if matches!(e, DnsBlrsError::InvalidOpCode(_) | DnsBlrsError::MessageTypeNotQuery) {
-                    warn!("{msg_stats} | {e}");
-                    header.set_response_code(ResponseCode::Refused);
-                } else {
-                    error!("{msg_stats} | {e}");
-                    header.set_response_code(ResponseCode::ServFail);
-                }
-
-                let msg = builder.build(header, [], [], [], []);
-                response.send_response(msg).await.expect("Could not send the error response")
-            }
-        }
-    }
-}
-
 pub struct Handler {
     pub redis_mngr: ConnectionManager,
-    pub filters: Vec<String>,
+    pub services: Vec<Service>,
     //pub filtering_conf: Arc<ArcSwapAny<Arc<FilteringConf>>>,
     pub resolver: Arc<TokioAsyncResolver>
 }
 impl Handler {
+    /// Finds the filters for the given socket address
+    pub fn find_filters(&self, socket_addr: SocketAddr) -> Option<Vec<String>> {
+        self.services.iter()
+            .find(|service| service.binds.iter().any(|socket_binds| socket_binds.socket_addr == socket_addr))
+            .map(|service| service.filters.clone())
+    }
+
     /// Try to handle a request on a designated thread
     async fn try_handle_request <R: ResponseHandler> (
         &self,
@@ -109,5 +80,41 @@ impl Handler {
         );
         response.send_response(msg).await
             .map_err(DnsBlrsError::IO)
+    }
+}
+
+#[async_trait]
+impl RequestHandler for Handler {
+    async fn handle_request <R: ResponseHandler> (
+        &self,
+        request: &Request,
+        mut response: R
+    ) -> ResponseInfo {
+        match self.try_handle_request(request, response.clone()).await {
+            // Successfully request info returned to the subscriber to be displayed
+            Err(e) => {
+                let builder = MessageResponseBuilder::from_message_request(request);
+
+                let mut header = Header::response_from_request(request.header());
+                header.set_authoritative(false);
+                header.set_recursion_available(true);
+
+                let request_info = request.request_info();
+                let msg_stats = format!("request:{} src:{}://{} QUERY:{}",
+                    request.id(), request_info.protocol, request_info.src, request_info.query
+                );
+                if matches!(e, DnsBlrsError::InvalidOpCode(_) | DnsBlrsError::MessageTypeNotQuery) {
+                    warn!("{msg_stats} | {e}");
+                    header.set_response_code(ResponseCode::Refused);
+                } else {
+                    error!("{msg_stats} | {e}");
+                    header.set_response_code(ResponseCode::ServFail);
+                }
+
+                let msg = builder.build(header, [], [], [], []);
+                response.send_response(msg).await.expect("Could not send the error response")
+            },
+            Ok(response_info) => response_info
+        }
     }
 }
