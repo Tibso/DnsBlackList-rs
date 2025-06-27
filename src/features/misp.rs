@@ -16,8 +16,6 @@ pub struct MispAPIConf {
     url: String,
 
     /// API token key
-    ///
-    /// Tip: Keep it secret
     token: String,
 
     /// Update frequency in seconds
@@ -80,6 +78,7 @@ pub async fn update(
 
     loop {
         info!("MISP update task running...");
+
         let err_fmt = "Failed to update MISP records: ";
 
         let (mut hmset_acc, mut expire_acc, mut results_acc): (u64, u64, u64) = (0, 0, 0);
@@ -137,10 +136,11 @@ pub async fn update(
                         expire_acc += expire_tot;
                         results_acc += results_cnt;
 
-                        info!("{hmset_acc} new MISP records added");
+                        info!("Adding new MISP records... {hmset_acc}");
                     },
                     Err(e) => {
                         error!("{err_fmt}{e}");
+                        request_page += 1;
                         continue
                     }
                 }
@@ -158,8 +158,6 @@ pub async fn update(
             if hmset_acc != results_acc {
                 warn!("Maybe some records were already in DB");
             }
-        } else {
-            warn!("Could not add any new MISP record");
         }
 
         sleep(Duration::from_secs(update_freq_secs)).await;
@@ -228,8 +226,8 @@ fn pipe_items(
         match item.typ.as_str() {
             "domain|ip" => {
                 let (domain, ip) = item.val.split_once('|').unwrap();
-                let domain_key = format!("DBL;D;{domain}");
-                let ip_key = format!("DBL;I;{ip}");
+                let domain_key = format!("DBL;D;malware;{domain}");
+                let ip_key = format!("DBL;I;malware;{ip}");
 
                 pipe
                     .hset_multiple(&domain_key, fields)
@@ -240,7 +238,7 @@ fn pipe_items(
             },
             "domain" | "hostname" => {
                 let domain = item.val;
-                let domain_key = format!("DBL;D;{domain}");
+                let domain_key = format!("DBL;D;malware;{domain}");
                 
                 pipe
                     .hset_multiple(&domain_key, fields)
@@ -248,7 +246,7 @@ fn pipe_items(
             },
             "ip-src" | "ip-dst" => {
                 let ip = item.val;
-                let ip_key = format!("DBL;I;{ip}");
+                let ip_key = format!("DBL;I;malware;{ip}");
 
                 pipe
                     .hset_multiple(&ip_key, fields)
