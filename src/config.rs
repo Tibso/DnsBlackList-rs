@@ -10,10 +10,11 @@ use tracing::{info, warn};
 use serde::Deserialize;
 use serde_norway::from_str;
 
+pub const CONFILE: &str = "dnsblrsd.conf";
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Deserialize)]
 /// The main config structure
+#[derive(Deserialize)]
 pub struct Config {
     pub redis_addr: SocketAddr,
     pub services: Vec<Service>,
@@ -44,8 +45,8 @@ pub enum BindProtocol {
 }
 
 /// Parses the config file into the main config structure
-pub fn read_confile(filename: &str) -> Result<Config, Box<dyn Error>> {
-    let data = fs::read_to_string(filename)?;
+pub fn read_confile() -> Result<Config, Box<dyn Error>> {
+    let data = fs::read_to_string(CONFILE)?;
     from_str(&data).map_err(|e| e.into())
 }
 
@@ -66,7 +67,7 @@ pub async fn setup_binds(
                     BindProtocol::Udp => UdpSocket::bind(socket_addr).await
                         .map(|s| srv.register_socket(s)),
                     BindProtocol::Tcp => TcpListener::bind(socket_addr).await
-                        .map(|l| srv.register_listener(l, TCP_TIMEOUT)),
+                        .map(|l| srv.register_listener(l, TCP_TIMEOUT))
                 };
 
                 match result {

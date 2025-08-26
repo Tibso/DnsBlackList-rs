@@ -12,13 +12,10 @@ use redis::aio::ConnectionManager;
 use tracing::{error, warn};
 use async_trait::async_trait;
 
-pub const TTL_1H: u32 = 3600;
-
 pub struct Handler {
+    pub resolver: Arc<TokioAsyncResolver>,
     pub redis_mngr: ConnectionManager,
-    pub services: Vec<Service>,
-    //pub filtering_conf: Arc<ArcSwapAny<Arc<FilteringConf>>>,
-    pub resolver: Arc<TokioAsyncResolver>
+    pub services: Vec<Service>
 }
 impl Handler {
     /// Finds the filters for the given socket address
@@ -71,7 +68,7 @@ impl Handler {
             records.name_servers.clear();
             records.additional.clear();
         }
-        
+
         let msg = builder.build(header,
             records.answer.iter(),
             records.name_servers.iter(),

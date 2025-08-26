@@ -9,7 +9,7 @@ use reqwest::{header::{ACCEPT, AUTHORIZATION, USER_AGENT}, Client, RequestBuilde
 use tracing::{error, info, warn};
 use std::{collections::HashMap, error::Error};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq)]
 /// MISP Config
 pub struct MispAPIConf {
     /// API url

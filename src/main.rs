@@ -7,16 +7,14 @@ use hickory_server::ServerFuture;
 use tracing::{error, info};
 
 #[tokio::main]
-async fn main()
--> ExitCode {
+async fn main() -> ExitCode {
     log::init_logging();
     info!("Server version: {VERSION}");
     info!("Initializing server...");
-   
-    let filename = "dnsblrsd.conf";
-    let config = match config::read_confile(filename) {
+
+    let config = match config::read_confile() {
         Err(e) => {
-            error!("Error reading or deserializing '{filename}': {e}");
+            error!("Error reading or deserializing '{}': {e}", config::CONFILE);
             return ExitCode::from(78) // CONFIG
         },
         Ok(config) => config
@@ -42,13 +40,11 @@ async fn main()
     info!("Resolver built");
     let resolver = Arc::new(resolver);
 
-    let handler = handler::Handler {
+    let mut srv = ServerFuture::new(handler::Handler {
+        resolver: resolver.clone(),
         redis_mngr: redis_mngr.clone(),
-        services: config.services.clone(),
-        resolver: resolver.clone()
-    };
-
-    let mut srv = ServerFuture::new(handler);
+        services: config.services.clone()
+    });
 
     if let Err(e) = config::setup_binds(&mut srv, config.services).await {
         error!("{e}");

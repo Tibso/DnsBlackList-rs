@@ -1,4 +1,4 @@
-use crate::{errors::{DnsBlrsError, DnsBlrsResult}, handler::TTL_1H};
+use crate::errors::{DnsBlrsError, DnsBlrsResult};
 
 use std::{net::SocketAddr, sync::Arc};
 use hickory_proto::{
@@ -8,6 +8,8 @@ use hickory_resolver::{
     config::{NameServerConfig, ResolverConfig, ResolverOpts}, Name, TokioAsyncResolver
 };
 use hickory_server::server::Request;
+
+const TTL_1H: u32 = 3600;
 
 /// Builds the resolver that will forward the requests to other DNS servers
 pub fn build(forwarders: Vec<SocketAddr>) -> TokioAsyncResolver {
