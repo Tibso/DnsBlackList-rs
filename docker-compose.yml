@@ -18,8 +18,8 @@ services:
     container_name: dnsblrsd
     ports:
       # make sure the ports here expose the ports defined in the services of dnslbrsd.conf
-      #- "53:53/udp"
-      #- "53:53/tcp"
+      - "53:53/udp"
+      - "53:53/tcp"
     cap_add:
       - NET_BIND_SERVICE
     volumes:
