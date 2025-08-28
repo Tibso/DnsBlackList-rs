@@ -6,10 +6,11 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dnsblrsd = { path = "../../" }
+dnsblrsd = { path = "../" }
 clap = {version = "4.5.45", features = ["derive"]}
 redis = {version = "0.32.5", features = ["aio", "tokio-comp", "connection-manager"]}
 serde = {version = "1.0.219", features = ["derive"]}
 serde_json = {version = "1.0.143", features = ["std"]}
 serde_norway = "0.9.42"
 time = "0.3.41"
+reqwest = { version = "0.12.23", features = ["blocking"] }

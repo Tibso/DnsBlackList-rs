@@ -74,8 +74,11 @@ fn main() -> ExitCode {
         Commands::RemoveIps { filter, ips }
             => rules::remove_ips(&mut con, &filter, ips),
 
-        Commands::FeedFilter { path_to_list, source, filter, ttl }
-            => rules::feed_filter(&mut con, &path_to_list, &source, &filter, &ttl),
+        Commands::FeedFilter { path_to_file, source, filter, ttl }
+            => rules::feed_filter(&mut con, &path_to_file, &source, &filter, &ttl),
+
+        Commands::FeedFromDownloads { path_to_file, ttl }
+            => rules::feed_from_downloads(&mut con, &path_to_file, &ttl),
 
         Commands::AddDomain { filter, source, domain, ttl, ip1, ip2 }
             => rules::add_domain(&mut con, &filter, &source, &domain, &ttl, ip1, ip2),

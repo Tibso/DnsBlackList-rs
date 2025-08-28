@@ -9,7 +9,7 @@ MARKER_FILE=/var/lib/dnsblrsd/.blacklist_initialized
 
 if [ ! -f "$MARKER_FILE" ]; then
   echo "Running redis-ctl blacklist initialization..."
-  redis-ctl add-blacklist /etc/dnsblrsd/blacklist-sources.txt
+  redis-ctl feedFromDownloads /etc/dnsblrsd/blacklist-sources.txt 3M
   touch "$MARKER_FILE"
 else
   echo "Blacklist already initialized, skipping redis-ctl"

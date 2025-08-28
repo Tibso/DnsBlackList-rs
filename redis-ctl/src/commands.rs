@@ -69,11 +69,17 @@ pub enum Commands {
 
     /// Feed rules to a filter
     FeedFilter {
-        path_to_list: PathBuf,
+        path_to_file: PathBuf,
         source: String,
         filter: String,
         ttl: String
     },
+
+    /// Feed rules from downloads
+    FeedFromDownloads {
+       path_to_file: PathBuf,
+       ttl: String
+    }
 
     // /// Display stats about IP addresses that match a pattern
     // ShowStats {pattern: String},

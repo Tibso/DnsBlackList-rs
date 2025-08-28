@@ -1,5 +1,5 @@
 [workspace]
-members = ["tools/redis-ctl"]
+members = ["redis-ctl"]
 resolver = "2"
 
 [workspace.package]
