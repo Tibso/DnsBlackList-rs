@@ -1,6 +1,6 @@
 use crate::errors::{DnsBlrsError, DnsBlrsResult};
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::ToSocketAddrs, sync::Arc};
 use hickory_proto::{
     op::{Header, ResponseCode}, rr::{Record, RecordData, RecordType}, xfer::Protocol, error::ProtoErrorKind
 };
@@ -8,14 +8,24 @@ use hickory_resolver::{
     config::{NameServerConfig, ResolverConfig, ResolverOpts}, Name, TokioAsyncResolver
 };
 use hickory_server::server::Request;
+use tracing::warn;
 
 const TTL_1H: u32 = 3600;
 
 /// Builds the resolver that will forward the requests to other DNS servers
-pub fn build(forwarders: Vec<SocketAddr>) -> TokioAsyncResolver {
+pub fn build(forwarders: Vec<String>) -> TokioAsyncResolver {
     let mut config = ResolverConfig::new();
-
+    
     for socket_addr in forwarders {
+        let Ok(mut socket_addrs) = socket_addr.to_socket_addrs() else {
+            warn!("Invalid socket address: {socket_addr}");
+            continue
+        };
+        let Some(socket_addr) = socket_addrs.next() else {
+            warn!("Could not resolve: {socket_addr}");
+            continue
+        };
+
         let ns_udp = NameServerConfig::new(socket_addr, Protocol::Udp);
         config.add_name_server(ns_udp);
         let ns_tcp = NameServerConfig::new(socket_addr, Protocol::Tcp);

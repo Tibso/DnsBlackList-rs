@@ -16,9 +16,9 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The main config structure
 #[derive(Deserialize)]
 pub struct Config {
-    pub redis_addr: SocketAddr,
+    pub redis_addr: String,
     pub services: Vec<Service>,
-    pub forwarders: Vec<SocketAddr>,
+    pub forwarders: Vec<String>,
     pub misp_api_conf: Option<MispAPIConf>
 }
 

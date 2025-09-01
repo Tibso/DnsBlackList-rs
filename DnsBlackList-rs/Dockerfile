@@ -1,0 +1,47 @@
+FROM rust:latest AS builder
+
+RUN apt update \
+    && apt install -y musl-tools \
+    && rustup target add x86_64-unknown-linux-musl
+
+# Define build directory
+WORKDIR /usr/src/
+
+# Copy Cargo files to cache dependencies
+COPY Cargo.toml Cargo.lock ./
+# Copy source files
+COPY src/ src/
+# Copy whole redis-ctl directory
+COPY redis-ctl/ redis-ctl/
+
+# Fetch dependencies and cache them
+RUN cargo fetch
+
+# Build the binary
+#RUN cargo build --release -p dnsblrsd --target x86_64-unknown-linux-musl
+RUN cargo build --release -p dnsblrsd --features misp --target x86_64-unknown-linux-musl
+RUN cargo build --release -p redis-ctl --target x86_64-unknown-linux-musl
+
+FROM alpine:latest
+
+RUN apk update \
+    apk add openssl netcat-openbsd
+
+# copy the binaries and make them executable
+COPY --from=builder /usr/src/target/release/dnsblrsd /usr/local/bin/dnsblrsd
+COPY --from=builder /usr/src/target/release/redis-ctl /usr/local/bin/redis-ctl
+RUN chmod +x /usr/local/bin/dnsblrsd /usr/local/bin/redis-ctl
+
+WORKDIR /etc/dnsblrsd
+# the binary will look for its configuration in its workdir
+COPY dnsblrsd.conf .
+# we also need to copy the blacklist sources for the first initialization
+COPY blacklist_sources.json /var/lib/dnsblrsd/blacklist_sources.json
+
+# NOTE: The docker needs the "NET_BIND_SERVICE" capability to bind to ports under 1024
+
+COPY startup.sh /usr/local/bin/startup.sh
+RUN chmod +x /usr/local/bin/startup.sh
+
+ENTRYPOINT ["startup.sh"]
+

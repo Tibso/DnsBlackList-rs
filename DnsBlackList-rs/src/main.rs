@@ -20,7 +20,7 @@ async fn main() -> ExitCode {
         Ok(config) => config
     };
 
-    let redis_addr = config.redis_addr.to_string();
+    let redis_addr = config.redis_addr;
     info!("Redis server: {redis_addr}");
     let redis_mngr = match redis_mod::build_manager(&redis_addr).await {
         Err(e) => {
