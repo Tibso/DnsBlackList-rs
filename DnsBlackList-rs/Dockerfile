@@ -6,13 +6,8 @@ RUN apt update \
 
 # Define build directory
 WORKDIR /usr/src/
-
-# Copy Cargo files to cache dependencies
-COPY Cargo.toml Cargo.lock ./
-# Copy source files
-COPY src/ src/
-# Copy whole redis-ctl directory
-COPY redis-ctl/ redis-ctl/
+# Copy whole repo in Rust builder
+COPY . .
 
 # Fetch dependencies and cache them
 RUN cargo fetch
@@ -38,10 +33,9 @@ COPY dnsblrsd.conf .
 # we also need to copy the blacklist sources for the first initialization
 COPY blacklist_sources.json /var/lib/dnsblrsd/blacklist_sources.json
 
-# NOTE: The docker needs the "NET_BIND_SERVICE" capability to bind to ports under 1024
-
 COPY startup.sh /usr/local/bin/startup.sh
 RUN chmod +x /usr/local/bin/startup.sh
 
+# NOTE: The docker needs the "NET_BIND_SERVICE" capability to bind to ports under 1024
 ENTRYPOINT ["startup.sh"]
 

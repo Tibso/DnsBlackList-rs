@@ -16,15 +16,19 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    working-directory: ./DnsBlackList-rs
+
 jobs:
   dnsblrsd:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Build dnsblrsd
-        run: cargo build -p dnsblrsd --verbose
+        run: cargo build -p dnsblrsd --verbose --features misp
       - name: Test dnsblrsd
-        run: cargo test -p dnsblrsd --verbose
+        run: cargo test -p dnsblrsd --verbose --features misp
 
   redis-ctl:
     runs-on: ubuntu-latest
