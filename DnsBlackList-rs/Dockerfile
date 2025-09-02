@@ -6,8 +6,14 @@ RUN apt update \
 
 # Define build directory
 WORKDIR /usr/src/
-# Copy whole repo in Rust builder
-COPY . .
+
+# Only copy what we need for caching purposes
+# Copy Cargo files to cache dependencies
+COPY Cargo.toml Cargo.lock ./
+# Copy source files
+COPY src/ src/
+# Copy whole redis-ctl directory
+COPY redis-ctl/ redis-ctl/
 
 # Fetch dependencies and cache them
 RUN cargo fetch
@@ -28,8 +34,6 @@ COPY --from=builder /usr/src/target/release/redis-ctl /usr/local/bin/redis-ctl
 RUN chmod +x /usr/local/bin/dnsblrsd /usr/local/bin/redis-ctl
 
 WORKDIR /etc/dnsblrsd
-# the binary will look for its configuration in its workdir
-COPY dnsblrsd.conf .
 # we also need to copy the blacklist sources for the first initialization
 COPY blacklist_sources.json /var/lib/dnsblrsd/blacklist_sources.json
 

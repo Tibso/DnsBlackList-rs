@@ -29,7 +29,6 @@ pub fn init_logging() {
         .event_format(
             Format::default()
                 .with_target(false)
-                .with_thread_ids(true)
-                .without_time())
+                .with_thread_ids(true))
         .init();
 }

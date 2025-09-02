@@ -1,12 +1,12 @@
 use crate::{
     errors::{DnsBlrsError, DnsBlrsResult},
-    handler::Handler, features::misp::MispAPIConf
+    handler::Handler, features::misp::MispAPIConf, config
 };
 
-use std::{fs, time::Duration, net::SocketAddr, error::Error};
+use std::{fs, time::Duration, net::SocketAddr, error::Error, process::ExitCode};
 use hickory_server::ServerFuture;
 use tokio::net::{TcpListener, UdpSocket};
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use serde::Deserialize;
 use serde_norway::from_str;
 
@@ -45,9 +45,34 @@ pub enum BindProtocol {
 }
 
 /// Parses the config file into the main config structure
-pub fn read_confile() -> Result<Config, Box<dyn Error>> {
+fn read_confile() -> Result<Config, Box<dyn Error>> {
     let data = fs::read_to_string(CONFILE)?;
     from_str(&data).map_err(|e| e.into())
+}
+
+/// Checks and initializes the config
+pub fn init_config() -> Result<Config, ExitCode> {
+    let exitcode = ExitCode::from(78); // CONFIG
+
+    let config = match config::read_confile() {
+        Err(e) => {
+            error!("Error reading or deserializing '{}': {e}", config::CONFILE);
+            return Err(exitcode)
+        },
+        Ok(config) => config
+    };
+
+    if config.redis_addr.is_empty() || config.services.is_empty() || config.forwarders.is_empty() {
+        error!("It looks like the server is missing some configuration. Exiting...");
+        return Err(exitcode)
+    }
+
+    if cfg!(feature = "misp") && config.misp_api_conf.is_none() {
+        error!("MISP configuration is missing from the configuration file. Exiting...");
+        return Err(exitcode)
+    }
+
+    Ok(config)
 }
 
 /// Setup server binds

@@ -12,16 +12,14 @@ async fn main() -> ExitCode {
     info!("Server version: {VERSION}");
     info!("Initializing server...");
 
-    let config = match config::read_confile() {
-        Err(e) => {
-            error!("Error reading or deserializing '{}': {e}", config::CONFILE);
-            return ExitCode::from(78) // CONFIG
-        },
+    let config = match config::init_config() {
+        Err(exitcode) => return exitcode,
         Ok(config) => config
     };
 
     let redis_addr = config.redis_addr;
     info!("Redis server: {redis_addr}");
+    info!("Attemping to connect...");
     let redis_mngr = match redis_mod::build_manager(&redis_addr).await {
         Err(e) => {
             error!("An error occured when building the Redis connection manager: {e}");
@@ -52,12 +50,8 @@ async fn main() -> ExitCode {
     };
 
     if cfg!(feature = "misp") {
-        match config.misp_api_conf {
-            None => {
-                error!("MISP configuration is missing from the configuration file");
-                return ExitCode::from(78) // CONFIG
-            },
-            Some(misp_api_conf) => { tokio::spawn(misp::update(misp_api_conf, redis_mngr.clone())); }
+        if let Some(misp_api_conf) = config.misp_api_conf {
+            tokio::spawn(misp::update(misp_api_conf, redis_mngr.clone()));
         }
     }
 
