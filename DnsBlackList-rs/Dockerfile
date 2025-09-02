@@ -26,11 +26,11 @@ RUN cargo build --release -p redis-ctl --target x86_64-unknown-linux-musl
 FROM alpine:latest
 
 RUN apk update \
-    apk add openssl netcat-openbsd tini
+    apk add netcat-openbsd tini
 
 # copy the binaries and make them executable
-COPY --from=builder /usr/src/target/release/dnsblrsd /usr/local/bin/dnsblrsd
-COPY --from=builder /usr/src/target/release/redis-ctl /usr/local/bin/redis-ctl
+COPY --from=builder /usr/src/target/x86_64-unknown-linux-musl/release/dnsblrsd /usr/local/bin/dnsblrsd
+COPY --from=builder /usr/src/target/x86_64-unknown-linux-musl/release/redis-ctl /usr/local/bin/redis-ctl
 RUN chmod +x /usr/local/bin/dnsblrsd /usr/local/bin/redis-ctl
 
 WORKDIR /etc/dnsblrsd
