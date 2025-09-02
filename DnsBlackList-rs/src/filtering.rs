@@ -27,7 +27,7 @@ pub async fn is_domain_blacklisted(
     for filter in filters {
         for i in (0..parts_len).rev() {
             search_domain_parts.insert(0, parts[i]);
-            let rule = format!("DBL;RD;{filter};{}", search_domain_parts.join("."));
+            let rule = format!("DBL;D;{filter};{}", search_domain_parts.join("."));
             pipe.hget(rule, "enabled");
         }
         search_domain_parts.clear();
@@ -60,7 +60,7 @@ pub async fn have_blacklisted_ip(
         let socket_local_addr = request.socket_local_addr();
         let filters = handler.find_filters(socket_local_addr).ok_or(DnsBlrsError::SocketFilters)?;
         for filter in filters {
-            let rule = format!("DBL;RI;{filter};{ip_string}");
+            let rule = format!("DBL;I;{filter};{ip_string}");
             pipe.hget(rule, "enabled");
         }
     }

@@ -14,6 +14,5 @@ if [ ! -f "$MARKER_FILE" ]; then
 fi
 
 echo "Starting dnsblrsd"
-/usr/local/bin/dnsblrsd &
+exec /usr/local/bin/dnsblrsd
 
-tail -f /dev/null

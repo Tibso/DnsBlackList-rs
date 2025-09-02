@@ -26,7 +26,7 @@ RUN cargo build --release -p redis-ctl --target x86_64-unknown-linux-musl
 FROM alpine:latest
 
 RUN apk update \
-    apk add netcat-openbsd tini
+    apk add netcat-openbsd
 
 # copy the binaries and make them executable
 COPY --from=builder /usr/src/target/x86_64-unknown-linux-musl/release/dnsblrsd /usr/local/bin/dnsblrsd
@@ -41,5 +41,4 @@ COPY startup.sh /usr/local/bin/startup.sh
 RUN chmod +x /usr/local/bin/startup.sh
 
 # NOTE: The docker needs the "NET_BIND_SERVICE" capability to bind to ports under 1024
-ENTRYPOINT ["/sbin/tini", "-g", "--"]
 CMD ["/usr/local/bin/startup.sh"]

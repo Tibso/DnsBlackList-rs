@@ -21,7 +21,7 @@ impl Handler {
     /// Finds the filters for the given socket address
     pub fn find_filters(&self, socket_addr: SocketAddr) -> Option<Vec<String>> {
         self.services.iter()
-            .find(|service| service.binds.iter().any(|socket_binds| socket_binds.socket_addr == socket_addr))
+            .find(|service| service.binds.iter().any(|bind| bind.socket_addr == socket_addr))
             .map(|service| service.filters.clone())
     }
 
