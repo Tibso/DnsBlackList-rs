@@ -34,7 +34,7 @@ pub struct Service {
 /// Binds the server will attempt to bind to
 pub struct Bind {
     pub protocols: Vec<BindProtocol>,
-    pub socket_addr: SocketAddr
+    pub socket_address: SocketAddr
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -86,7 +86,7 @@ pub async fn setup_binds(
         for bind in service.binds {
             for bind_protocol in bind.protocols {
                 total += 1;
-                let socket_addr = bind.socket_addr;
+                let socket_addr = bind.socket_address;
 
                 let result = match bind_protocol {
                     BindProtocol::Udp => UdpSocket::bind(socket_addr).await
