@@ -9,7 +9,10 @@ MARKER_FILE=/var/lib/dnsblrsd/.blacklist_initialized
 
 if [ ! -f "$MARKER_FILE" ]; then
   echo "Running blacklist initialization..."
-  /usr/local/bin/redis-ctl /etc/dnsblrsd/dnsblrsd.conf feed-from-downloads /var/lib/dnsblrsd/blacklist_sources.json 3M
+  while ! /usr/local/bin/redis-ctl /etc/dnsblrsd/dnsblrsd.conf feed-from-downloads /var/lib/dnsblrsd/blacklist_sources.json 3M; do
+    echo "Blacklist initialization failed! Retrying in 10 seconds..."
+    sleep 10
+  done
   touch "$MARKER_FILE"
 fi
 
