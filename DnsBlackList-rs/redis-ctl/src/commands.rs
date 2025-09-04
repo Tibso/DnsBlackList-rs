@@ -35,19 +35,19 @@ pub enum Commands {
         ip_ver: Option<u8>
     },
 
-    /// Search rules using a pattern
+    /// Search rules by pattern
     SearchRules {
         filter: String,
         domain: String
     },
 
-    /// Disable rules that match a pattern
+    /// Disable rules by pattern
     DisableRules {
         filter: String,
         pattern: String
     },
 
-    /// Enable rules that match a pattern
+    /// Enable rules by pattern
     EnableRules {
         filter: String,
         pattern: String
@@ -67,7 +67,7 @@ pub enum Commands {
         ips: Vec<String>
     },
 
-    /// Feed rules to a filter
+    /// Feed rules to a filter from a file
     FeedFilter {
         path_to_file: PathBuf,
         source: String,

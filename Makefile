@@ -4,13 +4,25 @@ run:
 	@docker compose down
 	@docker compose build
 	@docker compose up -d
-	@docker logs -f dnsblrsd
+
+build:
+	@docker compose down
+	@docker compose build
+
+logs:
+	@docker compose logs -f dnsblrsd valkey
+
+start:
+	@docker compose start
 
 stop:
-	@docker compose down
+	@docker compose stop
 
-exec:
-	@docker exec -it dnsblrsd /bin/bash
+godnsblrsd:
+	@docker exec -it dnsblrsd sh
 
-.PHONY: run stop
+govalkey:
+	@docker exec -it valkey sh
+
+.PHONY: run build stop start logs build godnsblrsd govalkey
 
