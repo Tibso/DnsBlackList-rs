@@ -54,15 +54,13 @@ impl Handler {
         // redis_mod::write_stats_request(&mut redis_manager, daemon_id, request_src_ip).await?;
 
         let resolver = self.resolver.clone();
+        let mut records = resolver::resolve(&resolver, request, wants_dnssec, &mut header).await?;
 
         let query_type = request.query().query_type();
         if matches!(query_type, RecordType::A | RecordType::AAAA)
-            && filtering::is_domain_blacklisted(self, request).await? {
-            header.set_response_code(ResponseCode::NXDomain);
-        }
-
-        let mut records = resolver::resolve(&resolver, request, wants_dnssec, &mut header).await?;
-        if filtering::have_blacklisted_ip(self, request, &records).await? {
+            && (filtering::is_domain_blacklisted(self, request).await?
+            || filtering::have_blacklisted_ip(self, request, &records).await?)
+        {
             header.set_response_code(ResponseCode::NXDomain);
             records.answer.clear();
             records.name_servers.clear();
