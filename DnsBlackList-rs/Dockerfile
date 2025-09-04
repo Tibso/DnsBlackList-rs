@@ -19,8 +19,8 @@ COPY redis-ctl/ redis-ctl/
 RUN cargo fetch
 
 # Build the binary
-#RUN cargo build --release -p dnsblrsd --target x86_64-unknown-linux-musl
-RUN cargo build --release -p dnsblrsd --features misp --target x86_64-unknown-linux-musl
+RUN cargo build --release -p dnsblrsd --target x86_64-unknown-linux-musl
+#RUN cargo build --release -p dnsblrsd --features misp --target x86_64-unknown-linux-musl
 RUN cargo build --release -p redis-ctl --target x86_64-unknown-linux-musl
 
 FROM alpine:latest
