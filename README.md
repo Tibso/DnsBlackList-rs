@@ -1,10 +1,10 @@
-# **DnsBlackList-rs**
+# 🚦 **DnsLiar** 🚦
 
-DNS resolver with custom rules using [Hickory DNS](https://github.com/hickory-dns/hickory-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs) (currently using Valkey as server).
+DNS forwarder with blacklist using [Hickory DNS](https://github.com/hickory-dns/hickory-dns) and [Redis-rs](https://github.com/redis-rs/redis-rs) (currently using Valkey as server).
 
-This DNS resolver **filters queries** using a **blacklist**. The resolver **blocks** DNS requests querying for **unwanted domains** to **protect** its **users** from them.
+This DNS forwarder **filters queries** using a **blacklist**. The forwarder **blocks** DNS requests querying for **unwanted domains** to **protect** its **users** from them.
 
-# **Quick start**
+# 🚀 **Quick start** 🚀
 
 Prerequisites: **git**, **docker**
 
@@ -16,13 +16,13 @@ cd DnsBlackList-rs/
 make
 ```
 
-# **Guidelines**
+# ⭐ **Guidelines** ⭐
 
 + **Fast, secure and reliable**
 + **Simple to setup and operate**
 + **Safe Rust only**
 
-# **Milestones**
+# 🎯 **Milestones** 🎯
 
 + [x] It works
 + [ ] Satisfactory initial blacklist (ficsit~ by suggesting URLs)
@@ -31,14 +31,14 @@ make
 + [ ] No Hickory DNS dependency
 + [ ] Each thread is fully independent, not sharing a connection object
 
-# **What does it do?**
+# ⚙️ **What does it do?** ⚙️
 
 Filters incoming DNS queries based on the server’s bound socket address and the associated blacklists.
 
 If a blacklisted domain is requested or a blacklisted IP is resolved, the request is blocked and an NXDOMAIN response is sent back.
 If nothing found, the legitimate response is sent back.
 
-## **Filtering**
+## 🧹 **Filtering** 🧹
 
 The following **query types** are filtered:
 
@@ -48,7 +48,7 @@ The following **query types** are filtered:
 **Other** query types are simply **forwarded** to other DNS servers.
 The **returned IPs** are still filtered against the **IP blacklist**.
 
-## **Blacklist rules**
+## 📜 **Blacklist rules** 📜
 
 A rule **defines** a **domain** or **IP** that must be blocked.
 
@@ -76,7 +76,7 @@ The **source** where the rule **originates** from.
   + **date**
   + **src**
 
-# **Redis-ctl**
+# 🛠️ **Redis-ctl** 🛠️
 
 Note: This tool still contains parts of a temporarily removed feature, the handling of v4 and v6 separately for domain.
 I'd like to reimplement this feature and others properly.
